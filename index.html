@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Big Head Ball</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #111;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* The stage is sized by JS to the scaled game; --u is one game unit in px */
+  #stage {
+    position: relative;
+    --u: 1px;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--u) * 22);
+    background: rgba(8, 30, 56, 0.55);
+    color: #fff;
+    text-align: center;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    margin: 0;
+    font-size: calc(var(--u) * 96);
+    font-weight: 900;
+    letter-spacing: calc(var(--u) * 2);
+    text-shadow: 0 calc(var(--u) * 6) 0 rgba(0,0,0,0.35);
+  }
+  .overlay h2 {
+    margin: 0;
+    font-size: calc(var(--u) * 84);
+    font-weight: 900;
+    text-shadow: 0 calc(var(--u) * 5) 0 rgba(0,0,0,0.35);
+  }
+  .overlay p {
+    margin: 0;
+    font-size: calc(var(--u) * 30);
+    font-weight: 700;
+  }
+  .label {
+    font-size: calc(var(--u) * 22);
+    font-weight: 700;
+    opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: calc(var(--u) * 2);
+  }
+  .row {
+    display: flex;
+    gap: calc(var(--u) * 14);
+  }
+  .btn {
+    font: inherit;
+    font-size: calc(var(--u) * 28);
+    font-weight: 800;
+    color: #fff;
+    background: rgba(255,255,255,0.14);
+    border: calc(var(--u) * 3) solid rgba(255,255,255,0.7);
+    border-radius: calc(var(--u) * 16);
+    padding: calc(var(--u) * 12) calc(var(--u) * 28);
+    min-width: calc(var(--u) * 150);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .btn:hover { background: rgba(255,255,255,0.24); }
+  .btn.sel { background: #ffd23f; border-color: #ffd23f; color: #1b1b1b; }
+  .btn.primary {
+    font-size: calc(var(--u) * 40);
+    background: #2ecc71;
+    border-color: #2ecc71;
+    padding: calc(var(--u) * 14) calc(var(--u) * 60);
+  }
+  .btn.primary:hover { background: #3ddc80; }
+  .overlay { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .hint {
+    font-size: calc(var(--u) * 20);
+    font-weight: 600;
+    opacity: 0.8;
+  }
+  .touch-only { display: none; }
+  body.touch .touch-only { display: block; }
+  body.touch .desk-only { display: none; }
+
+  /* In-match controls: only visible while a match is running */
+  .match-only { display: none !important; }
+  #stage[data-state="playing"]:not(.paused) .match-only,
+  #stage[data-state="goal"]:not(.paused) .match-only { display: flex !important; }
+
+  #pauseBtn {
+    position: absolute;
+    top: calc(var(--u) * 18);
+    right: calc(var(--u) * 18);
+    width: calc(var(--u) * 64);
+    height: calc(var(--u) * 64);
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--u) * 9);
+    padding: 0;
+    border: calc(var(--u) * 3) solid rgba(255,255,255,0.8);
+    border-radius: 50%;
+    background: rgba(10, 25, 45, 0.55);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  #pauseBtn i {
+    display: block;
+    width: calc(var(--u) * 8);
+    height: calc(var(--u) * 26);
+    background: #fff;
+    border-radius: calc(var(--u) * 2);
+  }
+
+  /* On-screen touch controls */
+  #touch {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  /* (Extra #stage so this beats the in-match "show" rule above) */
+  body:not(.touch) #stage #touch { display: none !important; }
+  .tbtn {
+    position: absolute;
+    bottom: calc(var(--u) * 22);
+    width: calc(var(--u) * 124);
+    height: calc(var(--u) * 124);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.22);
+    border: calc(var(--u) * 4) solid rgba(255,255,255,0.55);
+    color: rgba(255,255,255,0.95);
+    font-size: calc(var(--u) * 30);
+    font-weight: 900;
+    letter-spacing: calc(var(--u) * 1);
+    text-shadow: 0 calc(var(--u) * 2) calc(var(--u) * 3) rgba(0,0,0,0.35);
+    pointer-events: auto;
+    touch-action: none;
+    box-sizing: border-box;
+  }
+  .tbtn.on { background: rgba(255,255,255,0.5); border-color: #fff; }
+  .tbtn[data-action="left"]  { left: calc(var(--u) * 22); }
+  .tbtn[data-action="right"] { left: calc(var(--u) * 166); }
+  .tbtn[data-action="kick"]  { right: calc(var(--u) * 166); }
+  .tbtn[data-action="jump"]  { right: calc(var(--u) * 22); bottom: calc(var(--u) * 92); }
+  .tbtn svg { width: 46%; height: 46%; fill: currentColor; }
+
+  .wins {
+    font-size: calc(var(--u) * 26);
+    font-weight: 800;
+    color: #ffd23f;
+  }
+  #muteBtn {
+    position: absolute;
+    top: calc(var(--u) * 18);
+    right: calc(var(--u) * 96);
+    width: calc(var(--u) * 64);
+    height: calc(var(--u) * 64);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: #fff;
+    border: calc(var(--u) * 3) solid rgba(255,255,255,0.8);
+    border-radius: 50%;
+    background: rgba(10, 25, 45, 0.55);
+    cursor: pointer;
+    touch-action: manipulation;
+    z-index: 2;
+  }
+  #stage[data-state="menu"] #muteBtn, #stage[data-state="over"] #muteBtn, #stage.paused #muteBtn { right: calc(var(--u) * 18); }
+  #muteBtn svg { width: 55%; height: 55%; fill: currentColor; }
+  #muteBtn .slash { display: none; }
+  #muteBtn.muted .slash { display: inline; }
+  #muteBtn.muted .wave { display: none; }
+
+  #rotate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    flex-direction: column;
+    gap: 18px;
+    align-items: center;
+    justify-content: center;
+    background: #0d2238;
+    color: #fff;
+    font: 700 20px system-ui, sans-serif;
+    text-align: center;
+    padding: 16px;
+    z-index: 10;
+  }
+  #rotate .phone {
+    width: 44px;
+    height: 76px;
+    border: 4px solid #fff;
+    border-radius: 9px;
+    animation: tilt 1.8s ease-in-out infinite;
+  }
+  @keyframes tilt {
+    0%, 20% { transform: rotate(0deg); }
+    55%, 100% { transform: rotate(-90deg); }
+  }
+  @media (orientation: portrait) {
+    body.touch #rotate { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <div id="menu" class="overlay">
+    <h1>BIG HEAD BALL</h1>
+    <div class="label">Difficulty</div>
+    <div class="row" id="diffs">
+      <button class="btn" data-diff="easy">Easy</button>
+      <button class="btn sel" data-diff="normal">Normal</button>
+      <button class="btn" data-diff="hard">Hard</button>
+    </div>
+    <button class="btn primary" id="playBtn">Play</button>
+    <div class="wins" id="winsLabel">Total wins: 0</div>
+    <div class="hint desk-only">A/D or ←/→ move · W/↑ jump · Space kick · Esc pause</div>
+    <div class="hint touch-only">Use the on-screen buttons to move, jump and kick</div>
+  </div>
+
+  <button id="pauseBtn" class="match-only" aria-label="Pause"><i></i><i></i></button>
+
+  <div id="touch" class="match-only">
+    <div class="tbtn" data-action="left" aria-label="Move left"><svg viewBox="0 0 10 10"><path d="M7 1 L2 5 L7 9 Z"/></svg></div>
+    <div class="tbtn" data-action="right" aria-label="Move right"><svg viewBox="0 0 10 10"><path d="M3 1 L8 5 L3 9 Z"/></svg></div>
+    <div class="tbtn" data-action="kick">KICK</div>
+    <div class="tbtn" data-action="jump">JUMP</div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <h2>Paused</h2>
+    <div class="row">
+      <button class="btn primary" id="resumeBtn">Resume</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="restartBtn">Restart</button>
+      <button class="btn" id="pauseMenuBtn">Menu</button>
+    </div>
+  </div>
+
+  <button id="muteBtn" aria-label="Mute sound"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M4 4l16 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></button>
+
+  <div id="result" class="overlay hidden">
+    <h2 id="resultTitle">You win!</h2>
+    <p id="resultScore">3 – 1</p>
+    <div class="row">
+      <button class="btn primary" id="rematchBtn">Rematch</button>
+      <button class="btn" id="menuBtn">Menu</button>
+    </div>
+  </div>
+</div>
+<div id="rotate"><div class="phone"></div>Rotate your phone to landscape to play</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- World constants (logical units, independent of screen size) ----------
+  const WORLD_W = 1280;
+  const WORLD_H = 720;
+  const GROUND_Y = 640;           // top of the grass
+
+  const GRAVITY = 1800;           // units / s^2
+  const FIXED_DT = 1 / 120;       // physics step
+  const MAX_FRAME = 0.25;         // avoid spiral of death after tab switches
+
+  const RESTITUTION = 0.78;       // energy kept on each bounce (normal component)
+  const BOUNCE_FRICTION = 0.97;   // tangential energy kept on each bounce
+  const ROLL_FRICTION = 0.6;      // per-second velocity decay while rolling
+  const STOP_BOUNCE_SPEED = 60;   // below this, a bounce just settles
+
+  // Goals: open mouth facing the pitch, crossbar on top, back = screen edge
+  const GOAL_W = 100;
+  const GOAL_H = 230;
+  const BAR_H = 12;
+  const goals = [
+    { side: 'left',  x: 0,                y: GROUND_Y - GOAL_H, w: GOAL_W, h: GOAL_H },
+    { side: 'right', x: WORLD_W - GOAL_W, y: GROUND_Y - GOAL_H, w: GOAL_W, h: GOAL_H },
+  ];
+  // Crossbars as solid rectangles the ball collides with
+  const crossbars = goals.map(g => ({ x: g.x, y: g.y - BAR_H, w: g.w, h: BAR_H }));
+
+  const CROSSBAR_TILT = 900;      // sideways accel on a ball sitting on a crossbar
+  const BALL_MAX_SPEED = 2000;    // keeps the ball from tunnelling through things
+
+  // ---------- Player constants ----------
+  const P_SPEED = 430;            // max run speed
+  const P_ACCEL_GROUND = 4200;
+  const P_ACCEL_AIR = 2600;
+  const P_GRAVITY = 2400;
+  const P_FALL_MULT = 1.4;        // fall faster than you rise: snappier arc
+  const P_JUMP_CUT = 0.5;         // releasing jump early shortens the jump
+  const P_JUMP_V = 980;           // ~200 units high
+
+  const HEAD_R = 44;
+  const HEAD_OFFSET = 100;        // head centre above the feet
+  const BODY_R = 24;
+  const BODY_OFFSET = 38;         // body centre above the feet
+  const HIP_OFFSET = 40;          // leg pivot above the feet
+  const LEG_LEN = 33;
+  const FOOT_R = 13;
+
+  const HEAD_BOUNCE = 0.8;        // restitution vs the head
+  const BODY_BOUNCE = 0.45;       // restitution vs the body
+  const HEAD_MIN_POP = 260;       // headers always pop the ball away a bit
+
+  const KICK_DUR = 0.26;          // total swing time
+  const KICK_OUT = 0.07;          // time to reach full extension
+  const KICK_HOLD = 0.13;         // stays extended until this time
+  const KICK_SWING = 1.9;         // radians the leg rotates forward
+  const KICK_POWER = 1150;        // horizontal launch speed
+  const KICK_LIFT = 430;          // upward launch speed
+
+  // Players stay on the pitch between the goal mouths
+  const P_MIN_X = GOAL_W + HEAD_R;
+  const P_MAX_X = WORLD_W - GOAL_W - HEAD_R;
+
+  // ---------- Match constants ----------
+  const MATCH_TIME = 60;          // seconds
+  const GOAL_PAUSE = 2.2;         // seconds of celebration before kick-off
+  const KICKOFF_BALL_Y = 250;
+
+  // AI tuning per difficulty
+  const DIFFICULTY = {
+    // idleRate: chance per second of zoning out briefly
+    easy:   { speedMul: 0.65, reaction: 0.28, lookahead: 0,   aimError: 60, jumpChance: 0.35, kickChance: 0.4,  idleRate: 0.45 },
+    normal: { speedMul: 0.85, reaction: 0.16, lookahead: 0.2, aimError: 30, jumpChance: 0.65, kickChance: 0.7,  idleRate: 0.15 },
+    hard:   { speedMul: 1.0,  reaction: 0.07, lookahead: 0.4, aimError: 10, jumpChance: 0.9,  kickChance: 0.95, idleRate: 0.03 },
+  };
+
+  const DEBUG = new URLSearchParams(location.search).has('debug');
+
+  // ---------- Ball ----------
+  const ball = {
+    r: 22,
+    x: WORLD_W / 2, y: KICKOFF_BALL_Y,
+    vx: 0, vy: 0,
+    px: WORLD_W / 2, py: KICKOFF_BALL_Y,  // previous position (for render interpolation)
+    angle: 0, pAngle: 0,
+    onGround: false,
+  };
+
+  // ---------- Players ----------
+  const newInput = () => ({ left: false, right: false, jump: false, kick: false, jumpPressed: false, kickPressed: false });
+  const NO_INPUT = Object.freeze(newInput());
+
+  // (x, y) is the point between the feet, on the ground when standing.
+  function makePlayer(x, facing, colors, isAI) {
+    return {
+      x, y: GROUND_Y, vx: 0, vy: 0, px: x, py: GROUND_Y,
+      homeX: x,
+      facing, homeFacing: facing,
+      fixedFacing: isAI,          // the AI always faces the human's goal
+      maxSpeed: P_SPEED,
+      onGround: true,
+      kickT: -1,                  // time into the current kick, -1 = not kicking
+      kickHit: false,             // already struck the ball during this kick
+      lastHeaderSfx: -1,
+      colors,
+      input: newInput(),
+      ai: isAI ? { timer: 0, idle: 0, err: 0, errT: 0, wallT: 0 } : null,
+    };
+  }
+
+  const human = makePlayer(320, 1, { skin: '#f2c38f', shirt: '#e53935', shorts: '#1e3a8a', hair: '#3b2314' }, false);
+  const cpu = makePlayer(960, -1, { skin: '#c68642', shirt: '#1e88e5', shorts: '#f5f5f5', hair: '#e8b53a' }, true);
+  const players = [human, cpu];
+
+  const headPos = (p) => ({ x: p.x, y: p.y - HEAD_OFFSET });
+  const bodyPos = (p) => ({ x: p.x, y: p.y - BODY_OFFSET });
+
+  // How far the kicking leg is swung forward, 0..1
+  function kickAmount(t) {
+    if (t < 0) return 0;
+    if (t < KICK_OUT) return t / KICK_OUT;
+    if (t < KICK_HOLD) return 1;
+    return Math.max(0, 1 - (t - KICK_HOLD) / (KICK_DUR - KICK_HOLD));
+  }
+
+  // Leg angle for a player at x,y: straight down at rest, swinging forward/up
+  function kickFoot(x, y, facing, t) {
+    const hipX = x + facing * 6;
+    const hipY = y - HIP_OFFSET;
+    const a = Math.PI / 2 - facing * kickAmount(t) * KICK_SWING;
+    return {
+      hipX, hipY, angle: a,
+      x: hipX + Math.cos(a) * LEG_LEN,
+      y: hipY + Math.sin(a) * LEG_LEN,
+    };
+  }
+
+  // ---------- Match state ----------
+  let state = 'menu';             // 'menu' | 'playing' | 'goal' | 'over'
+  let difficulty = 'normal';
+  let score = { human: 0, cpu: 0 };
+  let timeLeft = MATCH_TIME;
+  let goalTimer = 0;
+  let lastScorer = null;          // 'human' | 'cpu'
+  let paused = false;
+
+  // ---------- Canvas / scaling ----------
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let scale = 1;
+
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    scale = Math.min(vw / WORLD_W, vh / WORLD_H);
+    const cssW = Math.floor(WORLD_W * scale);
+    const cssH = Math.floor(WORLD_H * scale);
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    stage.style.width = cssW + 'px';
+    stage.style.height = cssH + 'px';
+    stage.style.setProperty('--u', (cssW / WORLD_W) + 'px');
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(canvas.width / WORLD_W, 0, 0, canvas.height / WORLD_H, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', resize);
+  resize();
+
+  function toWorld(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (WORLD_W / rect.width),
+      y: (clientY - rect.top) * (WORLD_H / rect.height),
+    };
+  }
+
+  // ---------- Debug tool (?debug): click/tap to throw the ball at a point ----------
+  let target = null; // last clicked point, drawn as a marker
+
+  if (DEBUG) {
+    canvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const p = toWorld(e.clientX, e.clientY);
+      target = { x: p.x, y: p.y, t: 0.8 };
+      throwBallAt(p.x, p.y);
+    });
+  }
+
+  // Ballistic throw: pick a flight time from the distance, then solve for the
+  // launch velocity that passes through the target at that time.
+  function throwBallAt(tx, ty) {
+    const dx = tx - ball.x;
+    const dy = ty - ball.y;
+    const dist = Math.hypot(dx, dy);
+    const t = Math.min(1.1, Math.max(0.3, dist / 900));
+    ball.vx = dx / t;
+    ball.vy = dy / t - 0.5 * GRAVITY * t;
+    ball.onGround = false;
+  }
+
+  // ---------- Keyboard (controls the human player) ----------
+  const KEYMAP = {
+    KeyA: 'left', ArrowLeft: 'left',
+    KeyD: 'right', ArrowRight: 'right',
+    KeyW: 'jump', ArrowUp: 'jump',
+    Space: 'kick',
+  };
+
+  function pressAction(action) {
+    const inp = human.input;
+    if (!inp[action] && (action === 'jump' || action === 'kick')) inp[action + 'Pressed'] = true;
+    inp[action] = true;
+  }
+  function releaseAction(action) {
+    human.input[action] = false;
+  }
+  function clearInputs() {
+    for (const p of players) Object.assign(p.input, newInput());
+    fingers.clear();
+    for (const a in touchHeld) { touchHeld[a] = false; touchButtons[a].classList.remove('on'); }
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' || e.code === 'KeyP') {
+      e.preventDefault();
+      setPaused(!paused);
+      return;
+    }
+    if (e.code === 'Enter' && !inMatch()) {
+      e.preventDefault();
+      startMatch();
+      return;
+    }
+    if (paused) return;
+    const action = KEYMAP[e.code];
+    if (!action) return;
+    e.preventDefault();
+    pressAction(action);
+  });
+  window.addEventListener('keyup', (e) => {
+    const action = KEYMAP[e.code];
+    if (!action) return;
+    e.preventDefault();
+    releaseAction(action);
+  });
+  window.addEventListener('blur', clearInputs);
+
+  // ---------- Touch controls (multi-touch) ----------
+  // Every finger is tracked on its own: pointerId -> the button under it.
+  // Sliding a thumb from one arrow to the other switches direction.
+  const isTouch = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+    'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
+  if (isTouch) document.body.classList.add('touch');
+
+  const touchEl = document.getElementById('touch');
+  const touchButtons = {};
+  touchEl.querySelectorAll('[data-action]').forEach(b => { touchButtons[b.dataset.action] = b; });
+  const fingers = new Map();
+  const touchHeld = { left: false, right: false, jump: false, kick: false };
+
+  function buttonAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const b = el && el.closest ? el.closest('#touch [data-action]') : null;
+    return b ? b.dataset.action : null;
+  }
+
+  function syncTouch() {
+    const active = new Set(fingers.values());
+    for (const a in touchHeld) {
+      const on = active.has(a) && !paused && inMatch();
+      if (on && !touchHeld[a]) pressAction(a);
+      if (!on && touchHeld[a]) releaseAction(a);
+      touchHeld[a] = on;
+      touchButtons[a].classList.toggle('on', on);
+    }
+  }
+
+  touchEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    fingers.set(e.pointerId, buttonAt(e.clientX, e.clientY));
+    syncTouch();
+  });
+  touchEl.addEventListener('pointermove', (e) => {
+    if (!fingers.has(e.pointerId)) return;
+    e.preventDefault();
+    fingers.set(e.pointerId, buttonAt(e.clientX, e.clientY));
+    syncTouch();
+  });
+  const liftFinger = (e) => {
+    if (!fingers.delete(e.pointerId)) return;
+    syncTouch();
+  };
+  touchEl.addEventListener('pointerup', liftFinger);
+  touchEl.addEventListener('pointercancel', liftFinger);
+  // Long-press shouldn't open a context menu or select anything
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // ---------- AI ----------
+  // Fills p.input like a keyboard would. Decisions are refreshed only every
+  // `reaction` seconds, which gives it a human-like delay.
+  function updateAI(p, dt) {
+    const d = DIFFICULTY[difficulty];
+    const ai = p.ai;
+    const inp = p.input;
+    p.maxSpeed = P_SPEED * d.speedMul;
+
+    // Hold jump for a full-height jump while rising
+    inp.jump = !p.onGround && p.vy < 0;
+
+    if (ai.idle > 0) {
+      ai.idle -= dt;
+      inp.left = inp.right = false;
+      return;
+    }
+    ai.timer -= dt;
+    if (ai.timer > 0) return;
+    ai.timer = d.reaction;
+
+    if (Math.random() < d.idleRate * d.reaction) {
+      ai.idle = 0.25 + Math.random() * 0.35;
+      inp.left = inp.right = false;
+      return;
+    }
+
+    // Aim error drifts slowly instead of jittering every decision
+    ai.errT -= d.reaction;
+    if (ai.errT <= 0) {
+      ai.err = (Math.random() * 2 - 1) * d.aimError;
+      ai.errT = 0.8;
+    }
+
+    // Predict where the ball will be (ignoring bounces)
+    const t = d.lookahead;
+    let bx = ball.x + ball.vx * t;
+    let by = Math.min(GROUND_Y - ball.r, ball.y + ball.vy * t + 0.5 * GRAVITY * t * t);
+    bx = Math.max(ball.r, Math.min(WORLD_W - ball.r, bx)) + ai.err;
+
+    const ballHigh = by < GROUND_Y - 120;
+    const homeX = P_MAX_X - 60;
+    let targetX;
+
+    const behind = ball.x > p.x - 10;
+    if (behind) {
+      // Ball is level with / behind me: get back goal-side of it
+      targetX = Math.min(P_MAX_X, ball.x + 90);
+      // Hop over a low ball rather than dribbling it into my own goal
+      const gap = ball.x - p.x;
+      if (gap > 0 && gap < 130 && ball.y > GROUND_Y - 110 && p.onGround) inp.jumpPressed = true;
+    } else if (ball.vx > 300) {
+      // Ball heading toward my goal: drop back between ball and goal
+      targetX = Math.min(homeX, Math.max(p.x, bx + 140));
+    } else {
+      // Attack: approach from the right so contact pushes the ball left.
+      // For a high ball, aim the head slightly right of it to head it left.
+      // Aim error only ever moves a header target further right (the safe side).
+      targetX = ballHigh ? bx - ai.err + 26 + Math.abs(ai.err) * 0.6 : bx + BODY_R + ball.r - 6;
+    }
+    targetX = Math.max(P_MIN_X, Math.min(P_MAX_X, targetX));
+
+    const diff = targetX - p.x;
+    const dead = 12;
+    inp.left = diff < -dead;
+    inp.right = diff > dead;
+
+    // Jump for a header when the ball is above and close. Only when it's on
+    // the goal side of the head (or dead centre), so the header goes forward.
+    const headY = p.y - HEAD_OFFSET;
+    const dxBall = ball.x - p.x;
+    if (!behind && p.onGround && ball.y < headY - 10 && ball.y > headY - 280 &&
+        dxBall > -80 && dxBall < 15 && ball.vy > -250 && Math.random() < d.jumpChance) {
+      inp.jumpPressed = true;
+    }
+
+    // Kick when the ball is in front (to the left) and low enough for the foot
+    // Usually hold the kick if the opponent is standing right in front of the
+    // ball: blasting it into them just rebounds toward my own goal.
+    const front = p.x - ball.x;
+    const opp = human;
+    // (Near their goal it's a shot, so always take it.)
+    const nearTheirGoal = ball.x < WORLD_W * 0.35;
+    const wall = !nearTheirGoal && opp.onGround && ball.x - opp.x > 0 && ball.x - opp.x < 110;
+    ai.wallT = wall ? ai.wallT + d.reaction : 0;
+    const impatient = ai.wallT > 0.8;   // stuck in a shoving match: kick anyway
+    if (p.kickT < 0 && front > 0 && front < 85 && ball.y > p.y - 95 &&
+        (!wall || impatient) && Math.random() < d.kickChance) {
+      ai.wallT = 0;
+      inp.kickPressed = true;
+    }
+  }
+
+  // ---------- Storage (never required: private mode may block it) ----------
+  function storeGet(key, fallback) {
+    try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; }
+  }
+  function storeSet(key, value) {
+    try { localStorage.setItem(key, String(value)); } catch (e) { /* ignore */ }
+  }
+  const WINS_KEY = 'bigHeadBall.wins';
+  let totalWins = parseInt(storeGet(WINS_KEY, '0'), 10) || 0;
+
+  // ---------- Sound effects (Web Audio, all synthesized) ----------
+  const sfx = (() => {
+    let ac = null, master = null, noiseBuf = null;
+    let muted = storeGet('bigHeadBall.muted', '0') === '1';
+
+    // Must be called from a user gesture (browsers block audio before one)
+    function init() {
+      try {
+        if (!ac) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return;
+          ac = new AC();
+          master = ac.createGain();
+          master.gain.value = muted ? 0 : 0.7;
+          master.connect(ac.destination);
+          noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+          const data = noiseBuf.getChannelData(0);
+          for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        }
+        if (ac.state === 'suspended') ac.resume();
+      } catch (e) { ac = null; }
+    }
+
+    function play(fn) {
+      if (!ac || muted) return;
+      try { fn(ac.currentTime); } catch (e) { /* audio is optional */ }
+    }
+
+    function env(t, peak, attack, decay) {
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+      g.connect(master);
+      return g;
+    }
+
+    function tone(type, f0, f1, t, dur, vol, attack = 0.005) {
+      const o = ac.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      o.connect(env(t, vol, attack, dur));
+      o.start(t);
+      o.stop(t + attack + dur + 0.05);
+      return o;
+    }
+
+    function noise(t, dur, vol, type, freq, q = 1, attack = 0.005) {
+      const src = ac.createBufferSource();
+      src.buffer = noiseBuf;
+      src.loop = true;
+      const f = ac.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      src.connect(f);
+      const g = env(t, vol, attack, dur);
+      f.connect(g);
+      src.start(t, Math.random());
+      src.stop(t + attack + dur + 0.05);
+      return { src, f, g };
+    }
+
+    return {
+      init,
+      get muted() { return muted; },
+      toggleMute() {
+        muted = !muted;
+        storeSet('bigHeadBall.muted', muted ? '1' : '0');
+        if (master) master.gain.setTargetAtTime(muted ? 0 : 0.7, ac.currentTime, 0.02);
+        return muted;
+      },
+      kick() {
+        play((t) => {
+          tone('sine', 170, 45, t, 0.16, 0.9);
+          noise(t, 0.05, 0.35, 'lowpass', 1800);
+        });
+      },
+      header(speed) {
+        const v = Math.min(0.55, Math.max(0.12, speed / 1400));
+        play((t) => {
+          tone('triangle', 540, 260, t, 0.1, v);
+          tone('sine', 220, 120, t, 0.08, v * 0.7);
+        });
+      },
+      crossbar(speed) {
+        const v = Math.min(0.5, Math.max(0.12, speed / 1600));
+        play((t) => {
+          [[820, 1], [1230, 0.6], [1960, 0.4], [2650, 0.25]].forEach(([f, a], i) => {
+            tone('sine', f, f * 0.995, t, 0.9 - i * 0.15, v * a, 0.002);
+          });
+          noise(t, 0.03, v * 0.5, 'highpass', 3000);
+        });
+      },
+      cheer() {
+        play((t) => {
+          // Two bands of swelling noise, with a wobble for crowd texture
+          const dur = 2.8;
+          for (const [freq, vol] of [[1100, 0.35], [450, 0.3]]) {
+            const n = noise(t, dur, vol, 'bandpass', freq, 0.8, 0.35);
+            const lfo = ac.createOscillator();
+            const depth = ac.createGain();
+            lfo.frequency.value = 5 + Math.random() * 3;
+            depth.gain.value = vol * 0.35;
+            lfo.connect(depth);
+            depth.connect(n.g.gain);
+            lfo.start(t);
+            lfo.stop(t + dur + 0.5);
+          }
+          // A few rising "whoo" voices on top
+          for (let i = 0; i < 5; i++) {
+            const st = t + 0.1 + Math.random() * 0.4;
+            const f = 350 + Math.random() * 300;
+            tone('sawtooth', f, f * 1.5, st, 0.7 + Math.random() * 0.5, 0.025, 0.15);
+          }
+        });
+      },
+      whistle() {
+        play((t) => {
+          // short, short, long
+          [[0, 0.22], [0.34, 0.22], [0.68, 0.9]].forEach(([at, len]) => {
+            const st = t + at;
+            const o = ac.createOscillator();
+            o.type = 'sine';
+            o.frequency.value = 2900;
+            const lfo = ac.createOscillator();
+            const depth = ac.createGain();
+            lfo.frequency.value = 26;
+            depth.gain.value = 70;
+            lfo.connect(depth);
+            depth.connect(o.frequency);
+            const g = ac.createGain();
+            g.gain.setValueAtTime(0.0001, st);
+            g.gain.exponentialRampToValueAtTime(0.28, st + 0.02);
+            g.gain.setValueAtTime(0.28, st + len - 0.04);
+            g.gain.exponentialRampToValueAtTime(0.0001, st + len);
+            o.connect(g);
+            g.connect(master);
+            o.start(st); lfo.start(st);
+            o.stop(st + len + 0.05); lfo.stop(st + len + 0.05);
+            noise(st, len, 0.05, 'bandpass', 3000, 2, 0.02);
+          });
+        });
+      },
+    };
+  })();
+
+  // ---------- Effects: particles, screen shake, slow motion ----------
+  const particles = [];
+  const CONFETTI_COLORS = ['#ffd23f', '#ff5a4f', '#2ecc71', '#3fa7ff', '#ffffff', '#c86bfa'];
+  let shake = { t: 0, dur: 0, mag: 0 };
+  let slowmo = 0;                 // real seconds of slow motion left
+  let slowmoArmed = true;
+  let timeScale = 1;
+  let gameTime = 0;
+  const SLOWMO_TIME = 0.7;        // real seconds
+  const SLOWMO_SCALE = 0.3;
+
+  function addShake(mag, dur) {
+    if (mag >= shake.mag * (shake.t / (shake.dur || 1))) shake = { t: dur, dur, mag };
+  }
+
+  function spawnConfetti(x, y, dir) {
+    for (let i = 0; i < 130; i++) {
+      const a = -Math.PI / 2 + dir * (0.15 + Math.random() * 0.75);
+      const sp = 450 + Math.random() * 750;
+      particles.push({
+        type: 'confetti',
+        x: x + (Math.random() - 0.5) * 30, y: y + (Math.random() - 0.5) * 60,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 16,
+        w: 8 + Math.random() * 6, h: 5 + Math.random() * 3,
+        color: CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0],
+        life: 2.2 + Math.random() * 1.2, age: 0, seed: Math.random() * 10,
+      });
+    }
+  }
+
+  function spawnDust(x, y, strength) {
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const side = i < n / 2 ? -1 : 1;
+      particles.push({
+        type: 'dust',
+        x: x + side * (8 + Math.random() * 14), y: y - 4 - Math.random() * 6,
+        vx: side * (60 + Math.random() * 110) * strength, vy: -20 - Math.random() * 40,
+        r: 6 + Math.random() * 5, life: 0.35 + Math.random() * 0.2, age: 0,
+      });
+    }
+  }
+
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const q = particles[i];
+      q.age += dt;
+      if (q.age >= q.life) { particles.splice(i, 1); continue; }
+      if (q.type === 'confetti') {
+        q.vy += 900 * dt;
+        q.vx *= 1 - 1.6 * dt;
+        q.vy *= 1 - 1.6 * dt;
+        q.x += (q.vx + Math.sin(q.age * 9 + q.seed) * 40) * dt;
+        q.y += q.vy * dt;
+        q.rot += q.vr * dt;
+        if (q.y > GROUND_Y - 2) { q.y = GROUND_Y - 2; q.vy = 0; q.vx *= 0.9; q.vr *= 0.9; }
+      } else {
+        q.vx *= 1 - 4 * dt;
+        q.vy *= 1 - 3 * dt;
+        q.x += q.vx * dt;
+        q.y += q.vy * dt;
+      }
+    }
+  }
+
+  // Slow motion when the ball is a split second from crossing a goal line
+  function checkSlowmo() {
+    const midfield = ball.x > GOAL_W + 250 && ball.x < WORLD_W - GOAL_W - 250;
+    if (midfield) slowmoArmed = true;
+    if (!slowmoArmed || state !== 'playing') return;
+    if (ball.y - ball.r <= goals[0].y) return;              // above the crossbar
+    let dist = Infinity;
+    if (ball.vx < -150) dist = (ball.x + ball.r) - GOAL_W;
+    else if (ball.vx > 150) dist = (WORLD_W - GOAL_W) - (ball.x - ball.r);
+    if (dist > 0 && dist < 140 && dist / Math.abs(ball.vx) < 0.12) {
+      slowmo = SLOWMO_TIME;
+      slowmoArmed = false;
+    }
+  }
+
+  // ---------- Physics ----------
+  function stepPlayer(p, dt) {
+    p.px = p.x;
+    p.py = p.y;
+    const inp = state === 'playing' ? p.input : NO_INPUT;
+
+    // Horizontal movement with acceleration
+    const dir = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+    const accel = p.onGround ? P_ACCEL_GROUND : P_ACCEL_AIR;
+    const targetV = dir * p.maxSpeed;
+    const dv = targetV - p.vx;
+    const maxDv = accel * dt;
+    p.vx += Math.max(-maxDv, Math.min(maxDv, dv));
+    if (dir !== 0 && p.kickT < 0 && !p.fixedFacing) p.facing = dir;
+
+    // Jump
+    if (inp.jumpPressed && p.onGround) {
+      p.vy = -P_JUMP_V;
+      p.onGround = false;
+    }
+    p.input.jumpPressed = false;
+
+    // Gravity: heavier on the way down, and a short hop if jump is released early
+    let g = P_GRAVITY;
+    if (p.vy > 0) g *= P_FALL_MULT;
+    else if (!inp.jump) g /= P_JUMP_CUT;
+    p.vy += g * dt;
+
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    // Ground (a hard landing kicks up a puff of dust)
+    if (p.y >= GROUND_Y) {
+      if (!p.onGround && p.vy > 450) spawnDust(p.x, GROUND_Y, Math.min(1.4, p.vy / 900));
+      p.y = GROUND_Y;
+      p.vy = 0;
+      p.onGround = true;
+    } else {
+      p.onGround = false;
+    }
+
+    clampToPitch(p);
+
+    // Kick
+    if (inp.kickPressed && p.kickT < 0) {
+      p.kickT = 0;
+      p.kickHit = false;
+    }
+    p.input.kickPressed = false;
+    if (p.kickT >= 0) {
+      p.kickT += dt;
+      if (p.kickT >= KICK_DUR) p.kickT = -1;
+    }
+  }
+
+  // Stay on the pitch, out of the goals
+  function clampToPitch(p) {
+    if (p.x < P_MIN_X) { p.x = P_MIN_X; if (p.vx < 0) p.vx = 0; }
+    if (p.x > P_MAX_X) { p.x = P_MAX_X; if (p.vx > 0) p.vx = 0; }
+  }
+
+  // Keep the two players from overlapping. Landing on the other player's
+  // head lets you stand on it; otherwise they're pushed apart sideways.
+  function collidePlayers(a, b) {
+    const circles = (p) => [
+      { x: p.x, y: p.y - HEAD_OFFSET, r: HEAD_R },
+      { x: p.x, y: p.y - BODY_OFFSET, r: BODY_R },
+    ];
+    for (const ca of circles(a)) {
+      for (const cb of circles(b)) {
+        const dx = cb.x - ca.x;
+        const dy = cb.y - ca.y;
+        const minD = ca.r + cb.r;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= minD * minD) continue;
+        const d = Math.sqrt(d2) || 1;
+        const pen = minD - d;
+        const ny = dy / d;
+
+        if (Math.abs(ny) > 0.7) {
+          // One is on top of the other: lift the upper one
+          const upper = ny > 0 ? a : b;
+          upper.y -= pen;
+          if (upper.vy > 0) upper.vy = 0;
+          upper.onGround = true;
+        } else {
+          const sx = Math.sign(dx) || (a.x < b.x ? 1 : -1);
+          a.x -= sx * pen / 2;
+          b.x += sx * pen / 2;
+          if ((b.vx - a.vx) * sx < 0) {
+            const avg = (a.vx + b.vx) / 2;
+            a.vx = b.vx = avg;
+          }
+        }
+        clampToPitch(a);
+        clampToPitch(b);
+        return;
+      }
+    }
+  }
+
+  // Ball vs one of a player's circles. The player is treated as infinitely
+  // heavy: the ball reflects off it using the *relative* velocity, so moving
+  // into the ball adds the player's speed to the rebound.
+  function collideBallCircle(p, cx, cy, cr, bounciness, minPop, isBody) {
+    let dx = ball.x - cx;
+    let dy = ball.y - cy;
+    const minD = cr + ball.r;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= minD * minD) return;
+
+    let d = Math.sqrt(d2);
+    if (d < 1e-6) { dx = 0; dy = -1; d = 1; }
+    const nx = dx / d, ny = dy / d;
+    const pen = minD - d;
+
+    // Ball wedged between the body and the grass: the player stands on it
+    if (isBody && ny > 0.6 && ball.y + ball.r >= GROUND_Y - 1) {
+      p.y -= pen;
+      if (p.vy > 0) p.vy = 0;
+      p.onGround = true;
+      return;
+    }
+
+    ball.x += nx * pen;
+    ball.y += ny * pen;
+
+    const rvx = ball.vx - p.vx;
+    const rvy = ball.vy - p.vy;
+    const vn = rvx * nx + rvy * ny;
+    if (vn < 0) {
+      if (!isBody && vn < -150 && gameTime - p.lastHeaderSfx > 0.08) {
+        p.lastHeaderSfx = gameTime;
+        sfx.header(-vn);
+      }
+      let out = -vn * bounciness;
+      if (out < minPop) out = minPop;
+      const dvn = out - vn;
+      ball.vx += dvn * nx;
+      ball.vy += dvn * ny;
+    }
+  }
+
+  function collideBallPlayer(p) {
+    const b = bodyPos(p);
+    const h = headPos(p);
+    collideBallCircle(p, b.x, b.y, BODY_R, BODY_BOUNCE, 0, true);
+    collideBallCircle(p, h.x, h.y, HEAD_R, HEAD_BOUNCE, HEAD_MIN_POP, false);
+
+    // Kick: the swinging foot launches the ball once per kick
+    if (p.kickT >= 0 && !p.kickHit && kickAmount(p.kickT) > 0.25) {
+      const f = kickFoot(p.x, p.y, p.facing, p.kickT);
+      const dx = ball.x - f.x;
+      const dy = ball.y - f.y;
+      const reach = FOOT_R + ball.r + 4;
+      if (dx * dx + dy * dy < reach * reach) {
+        p.kickHit = true;
+        sfx.kick();
+        ball.vx = p.facing * KICK_POWER + p.vx * 0.4;
+        ball.vy = -KICK_LIFT + Math.min(0, p.vy * 0.3);
+        // Make sure the ball starts clear of the foot
+        const d = Math.hypot(dx, dy) || 1;
+        const pen = reach - d;
+        if (pen > 0) { ball.x += (dx / d) * pen; ball.y += (dy / d) * pen; }
+      }
+    }
+  }
+
+  function step(dt) {
+    if (state === 'playing') updateAI(cpu, dt);
+    for (const p of players) stepPlayer(p, dt);
+    collidePlayers(human, cpu);
+
+    ball.px = ball.x;
+    ball.py = ball.y;
+    ball.pAngle = ball.angle;
+
+    ball.vy += GRAVITY * dt;
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+
+    ball.onGround = false;
+    const r = ball.r;
+
+    for (const p of players) collideBallPlayer(p);
+
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (speed > BALL_MAX_SPEED) {
+      ball.vx *= BALL_MAX_SPEED / speed;
+      ball.vy *= BALL_MAX_SPEED / speed;
+    }
+
+    // Ground
+    if (ball.y + r > GROUND_Y) {
+      ball.y = GROUND_Y - r;
+      bounce(0, -1);
+    }
+    // Ceiling
+    if (ball.y - r < 0) {
+      ball.y = r;
+      bounce(0, 1);
+    }
+    // Side walls (back of each goal)
+    if (ball.x - r < 0) {
+      ball.x = r;
+      bounce(1, 0);
+    }
+    if (ball.x + r > WORLD_W) {
+      ball.x = WORLD_W - r;
+      bounce(-1, 0);
+    }
+    // Crossbars
+    for (const bar of crossbars) collideRect(bar);
+
+    // Rolling friction while resting on the ground
+    if (ball.onGround) {
+      ball.vx *= Math.max(0, 1 - ROLL_FRICTION * dt);
+      if (Math.abs(ball.vx) < 2) ball.vx = 0;
+    }
+
+    // Spin the ball according to horizontal travel
+    ball.angle += (ball.vx * dt) / r;
+
+    gameTime += dt;
+    checkSlowmo();
+    updateParticles(dt);
+    updateMatch(dt);
+  }
+
+  // Reflect velocity about a unit normal (nx, ny) pointing away from the surface.
+  function bounce(nx, ny) {
+    const vn = ball.vx * nx + ball.vy * ny;   // normal speed (negative = moving into surface)
+    if (vn >= 0) {
+      if (ny < 0) ball.onGround = true;
+      return;
+    }
+    const tx = -ny, ty = nx;                  // tangent
+    const vt = ball.vx * tx + ball.vy * ty;
+
+    let newVn = -vn * RESTITUTION;
+    if (newVn < STOP_BOUNCE_SPEED) newVn = 0; // settle instead of micro-bouncing
+    const newVt = vt * BOUNCE_FRICTION;
+
+    ball.vx = newVn * nx + newVt * tx;
+    ball.vy = newVn * ny + newVt * ty;
+
+    if (ny < 0 && newVn === 0) ball.onGround = true;
+  }
+
+  let lastBarSfx = -1;
+
+  // Circle vs axis-aligned rectangle
+  function collideRect(rect) {
+    const r = ball.r;
+    const cx = Math.max(rect.x, Math.min(ball.x, rect.x + rect.w));
+    const cy = Math.max(rect.y, Math.min(ball.y, rect.y + rect.h));
+    let dx = ball.x - cx;
+    let dy = ball.y - cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= r * r) return;
+
+    let nx, ny, pen;
+    if (d2 > 1e-6) {
+      const d = Math.sqrt(d2);
+      nx = dx / d; ny = dy / d;
+      pen = r - d;
+    } else {
+      // Center is inside the rect: push out through the nearest face
+      const left = ball.x - rect.x;
+      const right = rect.x + rect.w - ball.x;
+      const top = ball.y - rect.y;
+      const bottom = rect.y + rect.h - ball.y;
+      const m = Math.min(left, right, top, bottom);
+      if (m === top)        { nx = 0;  ny = -1; pen = top + r; }
+      else if (m === bottom){ nx = 0;  ny = 1;  pen = bottom + r; }
+      else if (m === left)  { nx = -1; ny = 0;  pen = left + r; }
+      else                  { nx = 1;  ny = 0;  pen = right + r; }
+    }
+    ball.x += nx * pen;
+    ball.y += ny * pen;
+    const impact = -(ball.vx * nx + ball.vy * ny);
+    if (impact > 150 && gameTime - lastBarSfx > 0.1) {
+      lastBarSfx = gameTime;
+      sfx.crossbar(impact);
+      if (impact > 700) addShake(5, 0.2);
+    }
+    bounce(nx, ny);
+    if (ny < -0.7) {
+      // Resting on top of the crossbar counts as rolling surface too
+      if (Math.abs(ball.vy) < 1) ball.onGround = true;
+      // The top of the bar tilts toward the pitch so the ball can't park there
+      const towardPitch = rect.x < WORLD_W / 2 ? 1 : -1;
+      ball.vx += towardPitch * CROSSBAR_TILT * FIXED_DT;
+    }
+  }
+
+  // ---------- Match flow ----------
+  const menuEl = document.getElementById('menu');
+  const pauseEl = document.getElementById('pause');
+  const winsLabel = document.getElementById('winsLabel');
+  const muteBtn = document.getElementById('muteBtn');
+  const resultEl = document.getElementById('result');
+  const resultTitle = document.getElementById('resultTitle');
+  const resultScore = document.getElementById('resultScore');
+
+  // The stage mirrors the state so CSS can show in-match controls
+  function setState(s) {
+    state = s;
+    stage.dataset.state = s;
+    clearInputs();
+  }
+
+  const inMatch = () => state === 'playing' || state === 'goal';
+
+  function setPaused(on) {
+    if (on && !inMatch()) return;
+    paused = on;
+    stage.classList.toggle('paused', on);
+    pauseEl.classList.toggle('hidden', !on);
+    clearInputs();
+  }
+
+  function resetPositions() {
+    for (const p of players) {
+      p.x = p.px = p.homeX;
+      p.y = p.py = GROUND_Y;
+      p.vx = p.vy = 0;
+      p.facing = p.homeFacing;
+      p.onGround = true;
+      p.kickT = -1;
+      if (p.ai) Object.assign(p.ai, { timer: 0.3, idle: 0, err: 0, errT: 0, wallT: 0 });
+    }
+    ball.x = ball.px = WORLD_W / 2;
+    ball.y = ball.py = KICKOFF_BALL_Y;
+    ball.vx = ball.vy = 0;
+    slowmoArmed = true;
+    clearInputs();
+  }
+
+  function startMatch() {
+    sfx.init();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    score = { human: 0, cpu: 0 };
+    timeLeft = MATCH_TIME;
+    resetPositions();
+    setPaused(false);
+    setState('playing');
+    menuEl.classList.add('hidden');
+    resultEl.classList.add('hidden');
+  }
+
+  function showMenu() {
+    setPaused(false);
+    setState('menu');
+    resetPositions();
+    score = { human: 0, cpu: 0 };
+    timeLeft = MATCH_TIME;
+    resultEl.classList.add('hidden');
+    menuEl.classList.remove('hidden');
+    updateWinsLabel();
+  }
+
+  function updateWinsLabel() {
+    winsLabel.textContent = `Total wins: ${totalWins}`;
+  }
+
+  function scoreGoal(scorer) {
+    score[scorer]++;
+    lastScorer = scorer;
+    setState('goal');
+    sfx.cheer();
+    addShake(12, 0.45);
+    const leftGoal = scorer === 'cpu';
+    spawnConfetti(leftGoal ? GOAL_W : WORLD_W - GOAL_W, goals[0].y + GOAL_H / 2, leftGoal ? 1 : -1);
+    goalTimer = GOAL_PAUSE;
+    clearInputs();
+  }
+
+  function endMatch() {
+    setState('over');
+    timeLeft = 0;
+    clearInputs();
+    sfx.whistle();
+    const h = score.human, c = score.cpu;
+    if (h > c) {
+      totalWins++;
+      storeSet(WINS_KEY, totalWins);
+    }
+    resultTitle.textContent = h > c ? 'You win!' : h < c ? 'You lose' : 'Draw';
+    resultScore.textContent = `YOU ${h} – ${c} CPU`;
+    resultEl.classList.remove('hidden');
+  }
+
+  function updateMatch(dt) {
+    if (state === 'playing') {
+      // Goal: ball fully over the line and entirely below the crossbar
+      const underBar = ball.y - ball.r > goals[0].y;
+      if (underBar && ball.x + ball.r < GOAL_W) scoreGoal('cpu');
+      else if (underBar && ball.x - ball.r > WORLD_W - GOAL_W) scoreGoal('human');
+      else {
+        timeLeft -= dt;
+        if (timeLeft <= 0) endMatch();
+      }
+    } else if (state === 'goal') {
+      goalTimer -= dt;
+      if (goalTimer <= 0) {
+        if (timeLeft <= 0) endMatch();
+        else { resetPositions(); setState('playing'); }
+      }
+    }
+  }
+
+  document.querySelectorAll('#diffs .btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      difficulty = btn.dataset.diff;
+      document.querySelectorAll('#diffs .btn').forEach(b => b.classList.toggle('sel', b === btn));
+    });
+  });
+  document.getElementById('playBtn').addEventListener('click', startMatch);
+  document.getElementById('rematchBtn').addEventListener('click', startMatch);
+  document.getElementById('menuBtn').addEventListener('click', showMenu);
+  document.getElementById('pauseBtn').addEventListener('click', () => setPaused(true));
+  document.getElementById('resumeBtn').addEventListener('click', () => setPaused(false));
+  document.getElementById('restartBtn').addEventListener('click', startMatch);
+  document.getElementById('pauseMenuBtn').addEventListener('click', showMenu);
+  setState('menu'); // initial state
+  updateWinsLabel();
+  muteBtn.classList.toggle('muted', sfx.muted);
+  muteBtn.addEventListener('click', () => {
+    sfx.init();
+    muteBtn.classList.toggle('muted', sfx.toggleMute());
+    muteBtn.blur();
+  });
+  // Resume also counts as a gesture that can unlock audio
+  document.getElementById('resumeBtn').addEventListener('click', () => sfx.init());
+
+  // Auto-pause when the tab is hidden or the phone is turned to portrait
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') setPaused(true);
+  });
+  const portraitMQ = window.matchMedia('(orientation: portrait)');
+  const onOrientation = () => { if (isTouch && portraitMQ.matches) setPaused(true); };
+  if (portraitMQ.addEventListener) portraitMQ.addEventListener('change', onOrientation);
+  else if (portraitMQ.addListener) portraitMQ.addListener(onOrientation);
+
+  // ---------- Rendering ----------
+  function drawBackground() {
+    // Sky
+    const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    sky.addColorStop(0, '#5fb7ff');
+    sky.addColorStop(1, '#bfe6ff');
+    ctx.fillStyle = sky;
+    ctx.fillRect(-40, -40, WORLD_W + 80, GROUND_Y + 40);
+
+    // A few clouds
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    cloud(250, 120, 1);
+    cloud(700, 80, 1.3);
+    cloud(1050, 150, 0.9);
+
+    // Grass with stripes
+    ctx.fillStyle = '#3fa34d';
+    ctx.fillRect(-40, GROUND_Y, WORLD_W + 80, WORLD_H - GROUND_Y + 40);
+    ctx.fillStyle = '#379443';
+    const stripe = 80;
+    for (let x = 0; x < WORLD_W; x += stripe * 2) {
+      ctx.fillRect(x, GROUND_Y, stripe, WORLD_H - GROUND_Y);
+    }
+    // Touchline
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(0, GROUND_Y, WORLD_W, 4);
+    // Halfway line
+    ctx.fillRect(WORLD_W / 2 - 2, GROUND_Y, 4, WORLD_H - GROUND_Y);
+  }
+
+  function cloud(x, y, s) {
+    ctx.beginPath();
+    ctx.arc(x, y, 28 * s, 0, Math.PI * 2);
+    ctx.arc(x + 32 * s, y - 14 * s, 34 * s, 0, Math.PI * 2);
+    ctx.arc(x + 68 * s, y, 26 * s, 0, Math.PI * 2);
+    ctx.arc(x + 34 * s, y + 10 * s, 26 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawGoal(g) {
+    const facingRight = g.side === 'left';
+    const mouthX = facingRight ? g.x + g.w : g.x;
+    const backX = facingRight ? g.x : g.x + g.w;
+
+    // Net background
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(g.x, g.y, g.w, g.h);
+
+    // Net mesh
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const cell = 16;
+    for (let x = g.x; x <= g.x + g.w; x += cell) {
+      ctx.moveTo(x, g.y); ctx.lineTo(x, GROUND_Y);
+    }
+    for (let y = g.y; y <= GROUND_Y; y += cell) {
+      ctx.moveTo(g.x, y); ctx.lineTo(g.x + g.w, y);
+    }
+    ctx.stroke();
+
+    // Back post
+    ctx.fillStyle = '#d9d9d9';
+    ctx.fillRect(facingRight ? backX : backX - 6, g.y, 6, g.h);
+
+    // Front post (visual only; the mouth is open)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(facingRight ? mouthX - 8 : mouthX, g.y, 8, g.h);
+  }
+
+  function drawCrossbar(bar) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(bar.x, bar.y + bar.h - 3, bar.w, 3);
+  }
+
+  function drawBall(x, y, angle) {
+    const r = ball.r;
+
+    // Shadow on the grass, shrinks with height
+    const h = Math.max(0, GROUND_Y - (y + r));
+    const s = Math.max(0.3, 1 - h / 500);
+    ctx.fillStyle = `rgba(0,0,0,${0.25 * s})`;
+    ctx.beginPath();
+    ctx.ellipse(x, GROUND_Y + 3, r * s, r * 0.3 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Simple panel pattern: centre pentagon + five spokes
+    ctx.fillStyle = '#222';
+    pentagon(0, 0, r * 0.38);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 5);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.38, Math.sin(a) * r * 0.38);
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function pentagon(cx, cy, rad) {
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 5);
+      const px = cx + Math.cos(a) * rad;
+      const py = cy + Math.sin(a) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  function drawShoe(x, y, angle, facing) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle - Math.PI / 2);
+    ctx.fillStyle = '#1b1b1b';
+    ctx.beginPath();
+    ctx.ellipse(facing * 4, 0, FOOT_R, FOOT_R * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(facing * 4 - 6, FOOT_R * 0.6 - 3, 12, 2);
+    ctx.restore();
+  }
+
+  function drawPlayer(p, x, y, ballX, ballY) {
+    const f = p.facing;
+    const { skin, shirt, shorts, hair } = p.colors;
+
+    // Shadow
+    const h = GROUND_Y - y;
+    const s = Math.max(0.35, 1 - h / 400);
+    ctx.fillStyle = `rgba(0,0,0,${0.25 * s})`;
+    ctx.beginPath();
+    ctx.ellipse(x, GROUND_Y + 3, 34 * s, 8 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Back leg (static)
+    const backHipX = x - f * 6, hipY = y - HIP_OFFSET;
+    const backFootX = x - f * 10, backFootY = y - FOOT_R * 0.6;
+    ctx.strokeStyle = skin;
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(backHipX, hipY);
+    ctx.lineTo(backFootX, backFootY - 4);
+    ctx.stroke();
+    drawShoe(backFootX, backFootY, Math.PI / 2, f);
+
+    // Body
+    ctx.fillStyle = shirt;
+    ctx.beginPath();
+    ctx.arc(x, y - BODY_OFFSET, BODY_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shorts;
+    ctx.beginPath();
+    ctx.arc(x, y - BODY_OFFSET, BODY_R, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.closePath();
+    ctx.fill();
+
+    // Kicking leg
+    const k = kickFoot(x, y, f, p.kickT);
+    const footX = k.hipX + Math.cos(k.angle) * (LEG_LEN - FOOT_R * 0.6);
+    const footY = k.hipY + Math.sin(k.angle) * (LEG_LEN - FOOT_R * 0.6);
+    ctx.strokeStyle = skin;
+    ctx.beginPath();
+    ctx.moveTo(k.hipX, k.hipY);
+    ctx.lineTo(footX, footY);
+    ctx.stroke();
+    drawShoe(footX, footY, k.angle, f);
+
+    // Head
+    const hx = x, hy = y - HEAD_OFFSET;
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Hair: a cap over the top-back of the head, clipped to the head
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    ctx.ellipse(hx - f * 12, hy - 36, HEAD_R + 8, 30, f * -0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Ear on the back side
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.arc(hx - f * (HEAD_R - 4), hy + 4, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes that follow the ball
+    const eyes = [hx + f * 4 - 13, hx + f * 4 + 13];
+    const eyeY = hy - 2;
+    for (const ex of eyes) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      const dx = ballX - ex, dy = ballY - eyeY;
+      const d = Math.hypot(dx, dy) || 1;
+      const look = Math.min(4.5, d / 20);
+      ctx.fillStyle = '#1b1b1b';
+      ctx.beginPath();
+      ctx.arc(ex + (dx / d) * look, eyeY + (dy / d) * look, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Eyebrows
+    ctx.strokeStyle = '#3b2314';
+    ctx.lineWidth = 3;
+    for (const ex of eyes) {
+      ctx.beginPath();
+      ctx.moveTo(ex - 8, eyeY - 15);
+      ctx.lineTo(ex + 8, eyeY - 15 - f * 2);
+      ctx.stroke();
+    }
+
+    // Mouth
+    ctx.strokeStyle = '#8a3b2a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(hx + f * 8, hy + 20, 9, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawHUD() {
+    const cx = WORLD_W / 2;
+    const w = 340, h = 64, y = 14;
+
+    // Scoreboard
+    ctx.fillStyle = 'rgba(10, 25, 45, 0.82)';
+    roundRect(cx - w / 2, y, w, h, 18);
+    ctx.fill();
+
+    ctx.textBaseline = 'middle';
+    ctx.font = '800 22px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = human.colors.shirt;
+    ctx.fillRect(cx - w / 2 + 16, y + h / 2 - 8, 16, 16);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('YOU', cx - w / 2 + 40, y + h / 2 + 1);
+    ctx.textAlign = 'right';
+    ctx.fillText('CPU', cx + w / 2 - 40, y + h / 2 + 1);
+    ctx.fillStyle = cpu.colors.shirt;
+    ctx.fillRect(cx + w / 2 - 32, y + h / 2 - 8, 16, 16);
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = '900 40px system-ui, sans-serif';
+    ctx.fillText(`${score.human} – ${score.cpu}`, cx, y + h / 2 + 2);
+
+    // Timer
+    const t = Math.max(0, Math.ceil(timeLeft));
+    const tw = 104, th = 36, ty = y + h + 6;
+    ctx.fillStyle = 'rgba(10, 25, 45, 0.82)';
+    roundRect(cx - tw / 2, ty, tw, th, 12);
+    ctx.fill();
+    ctx.fillStyle = t <= 10 && state !== 'menu' ? '#ff5a4f' : '#fff';
+    ctx.font = '800 24px system-ui, sans-serif';
+    ctx.fillText(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`, cx, ty + th / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function easeOutBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  function drawGoalText() {
+    if (state !== 'goal') return;
+    const t = GOAL_PAUSE - goalTimer;
+    const s = easeOutBack(Math.min(1, t / 0.4));
+    const wobble = 1 + Math.sin(t * 10) * 0.03;
+    ctx.save();
+    ctx.translate(WORLD_W / 2, 300);
+    ctx.scale(s * wobble, s * wobble);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 150px system-ui, sans-serif';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#1b1b1b';
+    ctx.strokeText('GOAL!', 0, 0);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText('GOAL!', 0, 0);
+    ctx.font = '800 34px system-ui, sans-serif';
+    ctx.lineWidth = 8;
+    const sub = lastScorer === 'human' ? 'YOU SCORED' : 'CPU SCORED';
+    ctx.strokeText(sub, 0, 100);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(sub, 0, 100);
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawTarget() {
+    if (!target) return;
+    ctx.globalAlpha = Math.max(0, target.t / 0.8);
+    ctx.strokeStyle = '#ff3b30';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(target.x - 10, target.y - 10); ctx.lineTo(target.x + 10, target.y + 10);
+    ctx.moveTo(target.x + 10, target.y - 10); ctx.lineTo(target.x - 10, target.y + 10);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function render(alpha) {
+    // Interpolate between the last two physics states for smooth motion
+    const x = lerp(ball.px, ball.x, alpha);
+    const y = lerp(ball.py, ball.y, alpha);
+    const a = lerp(ball.pAngle, ball.angle, alpha);
+
+    ctx.save();
+    if (shake.t > 0) {
+      const m = shake.mag * (shake.t / shake.dur);
+      ctx.translate((Math.random() * 2 - 1) * m, (Math.random() * 2 - 1) * m);
+    }
+    drawBackground();
+    goals.forEach(drawGoal);
+    drawParticles('dust');
+    for (const p of players) {
+      drawPlayer(p, lerp(p.px, p.x, alpha), lerp(p.py, p.y, alpha), x, y);
+    }
+    drawBall(x, y, a);
+    crossbars.forEach(drawCrossbar);
+    drawParticles('confetti');
+    drawTarget();
+    ctx.restore();
+
+    if (state !== 'menu') drawHUD();
+    drawGoalText();
+  }
+
+  function drawParticles(type) {
+    for (const q of particles) {
+      if (q.type !== type) continue;
+      const k = q.age / q.life;
+      if (type === 'dust') {
+        ctx.fillStyle = `rgba(214, 196, 160, ${0.55 * (1 - k)})`;
+        ctx.beginPath();
+        ctx.arc(q.x, q.y, q.r * (1 + k * 1.6), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.save();
+        ctx.globalAlpha = k > 0.8 ? (1 - k) / 0.2 : 1;
+        ctx.translate(q.x, q.y);
+        ctx.rotate(q.rot);
+        ctx.scale(1, Math.cos(q.age * 12 + q.seed));   // tumbling flutter
+        ctx.fillStyle = q.color;
+        ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
+        ctx.restore();
+      }
+    }
+  }
+
+  // ---------- Fixed-timestep loop ----------
+  let last = performance.now();
+  let acc = 0;
+
+  function frame(now) {
+    let delta = (now - last) / 1000;
+    last = now;
+    if (delta > MAX_FRAME) delta = MAX_FRAME;
+    if (paused) delta = 0;
+
+    // Slow motion: hold at SLOWMO_SCALE, then ease back to full speed
+    if (slowmo > 0) {
+      slowmo = Math.max(0, slowmo - delta);
+      const ease = 0.2;
+      timeScale = slowmo > ease ? SLOWMO_SCALE : lerp(1, SLOWMO_SCALE, slowmo / ease);
+    } else {
+      timeScale = 1;
+    }
+    if (shake.t > 0) shake.t = Math.max(0, shake.t - delta);
+
+    acc += delta * timeScale;
+
+    while (acc >= FIXED_DT) {
+      step(FIXED_DT);
+      acc -= FIXED_DT;
+    }
+    if (target) {
+      target.t -= delta;
+      if (target.t <= 0) target = null;
+    }
+
+    render(acc / FIXED_DT);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
