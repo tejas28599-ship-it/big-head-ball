@@ -9,10 +9,10 @@ A 1v1 side-view football game. Players with big heads run, jump, header and kick
 You don't need to install anything. Big Head Ball runs in your browser on any device: phone, tablet or computer.
 
 1. Open the Big Head Ball link above.
-2. On a phone, turn it sideways (landscape).
+2. On a phone, turn it sideways (landscape) and tap **Full screen**.
 3. Pick a difficulty and tap **Play**. ⚽
 
-On iPhone, turn silent mode off to hear the sound effects.
+On iPhone, Safari can't make websites full screen: tap **Share → Add to Home Screen** and open the game from your home screen instead. Turn silent mode off to hear the sound effects.
 
 ## How to play
 
@@ -23,7 +23,7 @@ On iPhone, turn silent mode off to hear the sound effects.
 - **Space**: kick
 - **Esc** or **P**: pause
 
-**On a phone or tablet**, use the on-screen buttons: arrows at the bottom-left, **Jump** and **Kick** at the bottom-right. You can move and jump at the same time.
+**On a phone or tablet**, use the on-screen buttons: arrows at the bottom-left, **Kick** and **Jump** at the bottom-right. You don't have to hit the buttons exactly: anywhere on the left half of the screen moves you, and anywhere on the right half kicks or jumps. You can move and jump at the same time.
 
 A goal counts when the ball fully crosses the line under the crossbar. Headers bounce off at the angle they hit your head, and running or jumping into the ball hits it harder. Choose **Easy**, **Normal** or **Hard** for the computer player.
 

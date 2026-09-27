@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Big Head Ball">
+<meta name="theme-color" content="#0d2238">
 <title>Big Head Ball</title>
 <style>
   html, body {
@@ -20,17 +23,16 @@
     -webkit-tap-highlight-color: transparent;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  /* The stage is sized by JS to the scaled game; --u is one game unit in px */
+  /* The stage fills the whole screen; --u is one game unit in px */
   #stage {
-    position: relative;
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
     --u: 1px;
   }
   canvas {
+    position: absolute;
+    inset: 0;
     display: block;
     touch-action: none;
   }
@@ -113,93 +115,96 @@
   #stage[data-state="playing"]:not(.paused) .match-only,
   #stage[data-state="goal"]:not(.paused) .match-only { display: flex !important; }
 
-  #pauseBtn {
+  #corner {
     position: absolute;
-    top: calc(var(--u) * 18);
-    right: calc(var(--u) * 18);
-    width: calc(var(--u) * 64);
-    height: calc(var(--u) * 64);
+    top: calc(max(10px, var(--u) * 18) + env(safe-area-inset-top));
+    right: calc(max(10px, var(--u) * 18) + env(safe-area-inset-right));
+    display: flex;
+    gap: max(8px, calc(var(--u) * 14));
+    z-index: 3;
+  }
+  .cbtn {
+    width: max(44px, calc(var(--u) * 64));
+    height: max(44px, calc(var(--u) * 64));
+    display: flex;
     align-items: center;
     justify-content: center;
-    gap: calc(var(--u) * 9);
     padding: 0;
-    border: calc(var(--u) * 3) solid rgba(255,255,255,0.8);
+    color: #fff;
+    border: 2px solid rgba(255,255,255,0.8);
     border-radius: 50%;
     background: rgba(10, 25, 45, 0.55);
     cursor: pointer;
     touch-action: manipulation;
   }
+  .cbtn svg { width: 52%; height: 52%; fill: currentColor; }
+  #pauseBtn { gap: 18%; }
   #pauseBtn i {
     display: block;
-    width: calc(var(--u) * 8);
-    height: calc(var(--u) * 26);
+    width: 12%;
+    height: 40%;
     background: #fff;
-    border-radius: calc(var(--u) * 2);
+    border-radius: 2px;
   }
+  #fsBtn .shrink { display: none; }
+  #fsBtn.on .grow { display: none; }
+  #fsBtn.on .shrink { display: inline; }
+  .hidden-btn { display: none !important; }
 
-  /* On-screen touch controls */
+  /* On-screen touch controls. The whole layer takes touches: the left half of
+     the screen moves, the right half jumps/kicks. The circles show where. */
   #touch {
     position: absolute;
     inset: 0;
-    pointer-events: none;
+    z-index: 1;
+    touch-action: none;
   }
   /* (Extra #stage so this beats the in-match "show" rule above) */
   body:not(.touch) #stage #touch { display: none !important; }
   .tbtn {
     position: absolute;
-    bottom: calc(var(--u) * 22);
-    width: calc(var(--u) * 124);
-    height: calc(var(--u) * 124);
+    width: 100px;
+    height: 100px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 2px;
     border-radius: 50%;
-    background: rgba(255,255,255,0.22);
-    border: calc(var(--u) * 4) solid rgba(255,255,255,0.55);
-    color: rgba(255,255,255,0.95);
-    font-size: calc(var(--u) * 30);
+    background: rgba(10, 25, 45, 0.28);
+    border: 3px solid rgba(255,255,255,0.7);
+    color: #fff;
     font-weight: 900;
-    letter-spacing: calc(var(--u) * 1);
-    text-shadow: 0 calc(var(--u) * 2) calc(var(--u) * 3) rgba(0,0,0,0.35);
-    pointer-events: auto;
-    touch-action: none;
+    letter-spacing: 1px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
     box-sizing: border-box;
+    pointer-events: none;
+    transition: transform 60ms, background-color 60ms;
   }
-  .tbtn.on { background: rgba(255,255,255,0.5); border-color: #fff; }
-  .tbtn[data-action="left"]  { left: calc(var(--u) * 22); }
-  .tbtn[data-action="right"] { left: calc(var(--u) * 166); }
-  .tbtn[data-action="kick"]  { right: calc(var(--u) * 166); }
-  .tbtn[data-action="jump"]  { right: calc(var(--u) * 22); bottom: calc(var(--u) * 92); }
-  .tbtn svg { width: 46%; height: 46%; fill: currentColor; }
+  .tbtn.on {
+    background: rgba(255,255,255,0.5);
+    border-color: #fff;
+    transform: scale(0.93);
+  }
+  .tbtn svg { width: 42%; height: 42%; fill: currentColor; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)); }
+  .tbtn.labelled svg { width: 34%; height: 34%; }
+  .tbtn span { font-size: 0.15em; }
 
   .wins {
     font-size: calc(var(--u) * 26);
     font-weight: 800;
     color: #ffd23f;
   }
-  #muteBtn {
-    position: absolute;
-    top: calc(var(--u) * 18);
-    right: calc(var(--u) * 96);
-    width: calc(var(--u) * 64);
-    height: calc(var(--u) * 64);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    color: #fff;
-    border: calc(var(--u) * 3) solid rgba(255,255,255,0.8);
-    border-radius: 50%;
-    background: rgba(10, 25, 45, 0.55);
-    cursor: pointer;
-    touch-action: manipulation;
-    z-index: 2;
-  }
-  #stage[data-state="menu"] #muteBtn, #stage[data-state="over"] #muteBtn, #stage.paused #muteBtn { right: calc(var(--u) * 18); }
-  #muteBtn svg { width: 55%; height: 55%; fill: currentColor; }
   #muteBtn .slash { display: none; }
   #muteBtn.muted .slash { display: inline; }
   #muteBtn.muted .wave { display: none; }
+
+  #fsTip p { max-width: calc(var(--u) * 900); font-size: max(15px, calc(var(--u) * 28)); line-height: 1.35; }
+  #fsTip .share {
+    display: inline-block;
+    width: 1em; height: 1.2em;
+    vertical-align: -0.2em;
+  }
 
   #rotate {
     display: none;
@@ -244,19 +249,21 @@
       <button class="btn sel" data-diff="normal">Normal</button>
       <button class="btn" data-diff="hard">Hard</button>
     </div>
-    <button class="btn primary" id="playBtn">Play</button>
+    <div class="row">
+      <button class="btn primary" id="playBtn">Play</button>
+      <button class="btn" id="fsMenuBtn">Full screen</button>
+    </div>
     <div class="wins" id="winsLabel">Total wins: 0</div>
     <div class="hint desk-only">A/D or ←/→ move · W/↑ jump · Space kick · Esc pause</div>
     <div class="hint touch-only">Use the on-screen buttons to move, jump and kick</div>
   </div>
 
-  <button id="pauseBtn" class="match-only" aria-label="Pause"><i></i><i></i></button>
 
   <div id="touch" class="match-only">
     <div class="tbtn" data-action="left" aria-label="Move left"><svg viewBox="0 0 10 10"><path d="M7 1 L2 5 L7 9 Z"/></svg></div>
     <div class="tbtn" data-action="right" aria-label="Move right"><svg viewBox="0 0 10 10"><path d="M3 1 L8 5 L3 9 Z"/></svg></div>
-    <div class="tbtn" data-action="kick">KICK</div>
-    <div class="tbtn" data-action="jump">JUMP</div>
+    <div class="tbtn labelled" data-action="kick" aria-label="Kick"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5 2.9 L7 4.3 L6.2 6.6 L3.8 6.6 L3 4.3 Z"/></svg><span>KICK</span></div>
+    <div class="tbtn labelled" data-action="jump" aria-label="Jump"><svg viewBox="0 0 10 10"><path d="M5 1 L9.2 6.2 L6.4 6.2 L6.4 9 L3.6 9 L3.6 6.2 L0.8 6.2 Z"/></svg><span>JUMP</span></div>
   </div>
 
   <div id="pause" class="overlay hidden">
@@ -270,7 +277,19 @@
     </div>
   </div>
 
-  <button id="muteBtn" aria-label="Mute sound"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M4 4l16 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></button>
+  <div id="corner">
+  <button id="muteBtn" class="cbtn" aria-label="Mute sound"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M4 4l16 16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></button>
+  <button id="fsBtn" class="cbtn" aria-label="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><g class="grow"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></g><g class="shrink"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></g></svg></button>
+  <button id="pauseBtn" class="cbtn match-only" aria-label="Pause"><i></i><i></i></button>
+  </div>
+
+  <div id="fsTip" class="overlay hidden">
+    <h2>Play full screen</h2>
+    <p>iPhone doesn't let websites go full screen, but you can add the game to your home screen:<br>
+      tap <svg class="share" viewBox="0 0 20 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15V2M5 7l5-5 5 5M4 11H2v11h16V11h-2"/></svg> <b>Share</b>, then <b>Add to Home Screen</b>.
+      Open Big Head Ball from there and it plays full screen.</p>
+    <button class="btn primary" id="fsTipOk">Got it</button>
+  </div>
 
   <div id="result" class="overlay hidden">
     <h2 id="resultTitle">You win!</h2>
@@ -321,7 +340,7 @@
   const P_ACCEL_AIR = 2600;
   const P_GRAVITY = 2400;
   const P_FALL_MULT = 1.4;        // fall faster than you rise: snappier arc
-  const P_JUMP_CUT = 0.5;         // releasing jump early shortens the jump
+  const JUMP_BUFFER = 0.12;       // a jump pressed this long before landing still counts
   const P_JUMP_V = 980;           // ~200 units high
 
   const HEAD_R = 44;
@@ -388,6 +407,7 @@
       kickT: -1,                  // time into the current kick, -1 = not kicking
       kickHit: false,             // already struck the ball during this kick
       lastHeaderSfx: -1,
+      jumpBuffer: 0,
       colors,
       input: newInput(),
       ai: isAI ? { timer: 0, idle: 0, err: 0, errT: 0, wallT: 0 } : null,
@@ -434,33 +454,41 @@
   const stage = document.getElementById('stage');
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  let scale = 1;
+  // The canvas covers the whole screen. The 1280x720 world is fitted inside it
+  // (offset ox/oy, in CSS px) and the extra space around it is filled with
+  // more sky, grass and stands, so there are no black bars on wide phones.
+  const view = { w: 0, h: 0, scale: 1, ox: 0, oy: 0 };
+  // Visible world area, in world units (can extend past 0..WORLD_W / 0..WORLD_H)
+  const vis = { l: 0, r: WORLD_W, t: 0, b: WORLD_H };
 
   function resize() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    scale = Math.min(vw / WORLD_W, vh / WORLD_H);
-    const cssW = Math.floor(WORLD_W * scale);
-    const cssH = Math.floor(WORLD_H * scale);
+    const scale = Math.min(vw / WORLD_W, vh / WORLD_H);
+    Object.assign(view, { w: vw, h: vh, scale, ox: (vw - WORLD_W * scale) / 2, oy: (vh - WORLD_H * scale) / 2 });
+    vis.l = -view.ox / scale;
+    vis.r = WORLD_W + view.ox / scale;
+    vis.t = -view.oy / scale;
+    vis.b = WORLD_H + view.oy / scale;
+
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    stage.style.width = cssW + 'px';
-    stage.style.height = cssH + 'px';
-    stage.style.setProperty('--u', (cssW / WORLD_W) + 'px');
-    canvas.style.width = cssW + 'px';
-    canvas.style.height = cssH + 'px';
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
-    ctx.setTransform(canvas.width / WORLD_W, 0, 0, canvas.height / WORLD_H, 0, 0);
+    stage.style.setProperty('--u', scale + 'px');
+    canvas.style.width = vw + 'px';
+    canvas.style.height = vh + 'px';
+    canvas.width = Math.round(vw * dpr);
+    canvas.height = Math.round(vh * dpr);
+    const k = dpr * scale;
+    ctx.setTransform(k * canvas.width / (vw * dpr), 0, 0, k * canvas.height / (vh * dpr), view.ox * dpr, view.oy * dpr);
+    if (typeof layoutTouch === 'function') layoutTouch();
   }
   window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', resize);
-  resize();
+  window.addEventListener('orientationchange', () => setTimeout(resize, 150));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 
   function toWorld(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
     return {
-      x: (clientX - rect.left) * (WORLD_W / rect.width),
-      y: (clientY - rect.top) * (WORLD_H / rect.height),
+      x: (clientX - view.ox) / view.scale,
+      y: (clientY - view.oy) / view.scale,
     };
   }
 
@@ -536,8 +564,11 @@
   window.addEventListener('blur', clearInputs);
 
   // ---------- Touch controls (multi-touch) ----------
-  // Every finger is tracked on its own: pointerId -> the button under it.
-  // Sliding a thumb from one arrow to the other switches direction.
+  // Every finger is tracked on its own: pointerId -> the action under it.
+  // The whole screen is split into zones, so a thumb never "misses":
+  //   left half  -> left / right (split halfway between the two arrows)
+  //   right half -> kick / jump  (split halfway between those buttons)
+  // Sliding a thumb across a split switches action without lifting it.
   const isTouch = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
     'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
   if (isTouch) document.body.classList.add('touch');
@@ -548,17 +579,57 @@
   const fingers = new Map();
   const touchHeld = { left: false, right: false, jump: false, kick: false };
 
-  function buttonAt(x, y) {
-    const el = document.elementFromPoint(x, y);
-    const b = el && el.closest ? el.closest('#touch [data-action]') : null;
-    return b ? b.dataset.action : null;
+  const touchLayout = { moveSplit: 0, actSplit: 0 };
+
+  // Size and place the buttons from the real screen size and safe areas
+  function layoutTouch() {
+    const safe = readSafeArea();
+    const vw = view.w, vh = view.h;
+    const b = Math.round(Math.max(72, Math.min(130, vh * 0.27, vw * 0.15)));
+    const pad = Math.round(Math.max(12, vh * 0.045));
+    const gap = Math.round(b * 0.22);
+    const top = vh - safe.bottom - pad - b;
+    const place = (a, x, y) => {
+      const el = touchButtons[a];
+      el.style.width = el.style.height = b + 'px';
+      el.style.fontSize = b + 'px';
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+    };
+    const lx = safe.left + pad, rx = lx + b + gap;
+    const jx = vw - safe.right - pad - b, kx = jx - b - gap;
+    place('left', lx, top);
+    place('right', rx, top);
+    place('kick', kx, top);
+    place('jump', jx, top - Math.round(b * 0.45));   // raised: follows the thumb's arc
+    touchLayout.moveSplit = (lx + rx) / 2 + b / 2;
+    touchLayout.actSplit = (kx + jx) / 2 + b / 2;
+  }
+
+  function readSafeArea() {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const px = (v) => parseFloat(v) || 0;
+    const r = { top: px(cs.paddingTop), right: px(cs.paddingRight), bottom: px(cs.paddingBottom), left: px(cs.paddingLeft) };
+    probe.remove();
+    return r;
+  }
+
+  function buttonAt(x) {
+    if (x < view.w / 2) return x < touchLayout.moveSplit ? 'left' : 'right';
+    return x < touchLayout.actSplit ? 'kick' : 'jump';
   }
 
   function syncTouch() {
     const active = new Set(fingers.values());
     for (const a in touchHeld) {
       const on = active.has(a) && !paused && inMatch();
-      if (on && !touchHeld[a]) pressAction(a);
+      if (on && !touchHeld[a]) {
+        pressAction(a);
+        if (navigator.vibrate) { try { navigator.vibrate(10); } catch (e) { /* no haptics */ } }
+      }
       if (!on && touchHeld[a]) releaseAction(a);
       touchHeld[a] = on;
       touchButtons[a].classList.toggle('on', on);
@@ -567,14 +638,17 @@
 
   touchEl.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    fingers.set(e.pointerId, buttonAt(e.clientX, e.clientY));
+    fingers.set(e.pointerId, buttonAt(e.clientX));
     syncTouch();
   });
   touchEl.addEventListener('pointermove', (e) => {
     if (!fingers.has(e.pointerId)) return;
     e.preventDefault();
-    fingers.set(e.pointerId, buttonAt(e.clientX, e.clientY));
-    syncTouch();
+    const a = buttonAt(e.clientX);
+    if (a !== fingers.get(e.pointerId)) {
+      fingers.set(e.pointerId, a);
+      syncTouch();
+    }
   });
   const liftFinger = (e) => {
     if (!fingers.delete(e.pointerId)) return;
@@ -585,6 +659,58 @@
   // Long-press shouldn't open a context menu or select anything
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  resize();
+
+  // ---------- Full screen ----------
+  const docEl = document.documentElement;
+  const fsBtn = document.getElementById('fsBtn');
+  const fsMenuBtn = document.getElementById('fsMenuBtn');
+  const fsTip = document.getElementById('fsTip');
+  const canFullscreen = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen);
+  const isStandalone = (window.matchMedia && (window.matchMedia('(display-mode: fullscreen)').matches ||
+    window.matchMedia('(display-mode: standalone)').matches)) || navigator.standalone === true;
+  const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+  async function enterFullscreen() {
+    try {
+      const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+      await req.call(docEl, { navigationUI: 'hide' });
+    } catch (e) { /* refused */ }
+    // Android: keep it sideways while playing (ignored where unsupported)
+    try { await screen.orientation.lock('landscape'); } catch (e) { /* not supported */ }
+    if (!isFullscreen()) showFsTip();
+  }
+  function exitFullscreen() {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
+  }
+  function toggleFullscreen() {
+    if (!canFullscreen) { showFsTip(); return; }
+    if (isFullscreen()) exitFullscreen(); else enterFullscreen();
+  }
+  function showFsTip() {
+    if (isTouch) { setPaused(true); pauseEl.classList.add('hidden'); fsTip.classList.remove('hidden'); }
+  }
+  function updateFsButtons() {
+    const on = isFullscreen();
+    fsBtn.classList.toggle('on', on);
+    fsBtn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+    fsMenuBtn.textContent = on ? 'Exit full screen' : 'Full screen';
+    setTimeout(resize, 50);
+  }
+  // Already running as a home-screen app: it's full screen, no button needed
+  if (isStandalone) { fsBtn.classList.add('hidden-btn'); fsMenuBtn.classList.add('hidden-btn'); }
+  // Desktop browsers without the API: nothing useful to offer
+  if (!canFullscreen && !isTouch) { fsBtn.classList.add('hidden-btn'); fsMenuBtn.classList.add('hidden-btn'); }
+  fsBtn.addEventListener('click', () => { fsBtn.blur(); toggleFullscreen(); });
+  fsMenuBtn.addEventListener('click', () => { fsMenuBtn.blur(); toggleFullscreen(); });
+  document.getElementById('fsTipOk').addEventListener('click', () => {
+    fsTip.classList.add('hidden');
+    if (inMatch()) pauseEl.classList.remove('hidden');
+  });
+  document.addEventListener('fullscreenchange', updateFsButtons);
+  document.addEventListener('webkitfullscreenchange', updateFsButtons);
+
   // ---------- AI ----------
   // Fills p.input like a keyboard would. Decisions are refreshed only every
   // `reaction` seconds, which gives it a human-like delay.
@@ -593,9 +719,6 @@
     const ai = p.ai;
     const inp = p.input;
     p.maxSpeed = P_SPEED * d.speedMul;
-
-    // Hold jump for a full-height jump while rising
-    inp.jump = !p.onGround && p.vy < 0;
 
     if (ai.idle > 0) {
       ai.idle -= dt;
@@ -932,17 +1055,20 @@
     p.vx += Math.max(-maxDv, Math.min(maxDv, dv));
     if (dir !== 0 && p.kickT < 0 && !p.fixedFacing) p.facing = dir;
 
-    // Jump
-    if (inp.jumpPressed && p.onGround) {
+    // Jump. Always full height (quick taps on a touchscreen shouldn't give
+    // weak hops), and a press just before landing is remembered briefly.
+    if (inp.jumpPressed) p.jumpBuffer = JUMP_BUFFER;
+    p.input.jumpPressed = false;
+    if (p.jumpBuffer > 0 && p.onGround) {
       p.vy = -P_JUMP_V;
       p.onGround = false;
+      p.jumpBuffer = 0;
     }
-    p.input.jumpPressed = false;
+    p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
 
-    // Gravity: heavier on the way down, and a short hop if jump is released early
+    // Gravity: heavier on the way down for a snappy arc
     let g = P_GRAVITY;
     if (p.vy > 0) g *= P_FALL_MULT;
-    else if (!inp.jump) g /= P_JUMP_CUT;
     p.vy += g * dt;
 
     p.x += p.vx * dt;
@@ -1247,6 +1373,7 @@
       p.facing = p.homeFacing;
       p.onGround = true;
       p.kickT = -1;
+      p.jumpBuffer = 0;
       if (p.ai) Object.assign(p.ai, { timer: 0.3, idle: 0, err: 0, errT: 0, wallT: 0 });
     }
     ball.x = ball.px = WORLD_W / 2;
@@ -1364,12 +1491,15 @@
 
   // ---------- Rendering ----------
   function drawBackground() {
+    // Everything is drawn a little past the visible edges so screen shake never shows gaps
+    const L = vis.l - 40, R = vis.r + 40, T = vis.t - 40, B = vis.b + 40;
+
     // Sky
-    const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    const sky = ctx.createLinearGradient(0, Math.min(0, vis.t), 0, GROUND_Y);
     sky.addColorStop(0, '#5fb7ff');
     sky.addColorStop(1, '#bfe6ff');
     ctx.fillStyle = sky;
-    ctx.fillRect(-40, -40, WORLD_W + 80, GROUND_Y + 40);
+    ctx.fillRect(L, T, R - L, GROUND_Y - T);
 
     // A few clouds
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -1377,19 +1507,64 @@
     cloud(700, 80, 1.3);
     cloud(1050, 150, 0.9);
 
+    // Stands with a crowd behind each goal (only visible on wide screens)
+    if (vis.l < 0) drawStands(L, 0, -1);
+    if (vis.r > WORLD_W) drawStands(WORLD_W, R, 1);
+
     // Grass with stripes
     ctx.fillStyle = '#3fa34d';
-    ctx.fillRect(-40, GROUND_Y, WORLD_W + 80, WORLD_H - GROUND_Y + 40);
+    ctx.fillRect(L, GROUND_Y, R - L, B - GROUND_Y);
     ctx.fillStyle = '#379443';
     const stripe = 80;
-    for (let x = 0; x < WORLD_W; x += stripe * 2) {
-      ctx.fillRect(x, GROUND_Y, stripe, WORLD_H - GROUND_Y);
+    for (let x = Math.floor(L / (stripe * 2)) * stripe * 2; x < R; x += stripe * 2) {
+      ctx.fillRect(x, GROUND_Y, stripe, B - GROUND_Y);
     }
     // Touchline
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillRect(0, GROUND_Y, WORLD_W, 4);
+    ctx.fillRect(L, GROUND_Y, R - L, 4);
     // Halfway line
-    ctx.fillRect(WORLD_W / 2 - 2, GROUND_Y, 4, WORLD_H - GROUND_Y);
+    ctx.fillRect(WORLD_W / 2 - 2, GROUND_Y, 4, B - GROUND_Y);
+
+    // Ball-stop nets above each goal: the pitch's side walls
+    for (const x of [0, WORLD_W]) {
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(x - 5, T, 10, goals[0].y - BAR_H - T);
+      ctx.fillStyle = '#e8e8e8';
+      ctx.fillRect(x - 2, T, 4, goals[0].y - BAR_H - T);
+    }
+  }
+
+  const CROWD_COLORS = ['#ff5a4f', '#ffd23f', '#3fa7ff', '#ffffff', '#2ecc71', '#f28fb0', '#c86bfa', '#1e88e5'];
+
+  // Tiered stands filled with a crowd; they jump when a goal goes in
+  function drawStands(x0, x1, side) {
+    const top = Math.min(0, vis.t) - 40;
+    ctx.fillStyle = '#1d3552';
+    ctx.fillRect(x0, top, x1 - x0, GROUND_Y - top);
+    const rowH = 26, step = 17;
+    const cheering = state === 'goal';
+    const t = performance.now() / 1000;
+    let row = 0;
+    for (let y = GROUND_Y - 30; y > top; y -= rowH, row++) {
+      ctx.fillStyle = row % 2 ? '#26446a' : '#213c5e';
+      ctx.fillRect(x0, y, x1 - x0, 8);
+      for (let x = side < 0 ? -12 - (row % 2) * 8 : WORLD_W + 12 + (row % 2) * 8;
+           side < 0 ? x > x0 : x < x1; x += side * step) {
+        const n = Math.abs(Math.sin(x * 12.9898 + y * 78.233)) * 43758.5453;
+        const seed = n - Math.floor(n);
+        if (seed < 0.12) continue;                         // empty seat
+        const bob = cheering ? Math.abs(Math.sin(t * 14 + seed * 20)) * 6 : 0;
+        ctx.fillStyle = CROWD_COLORS[(seed * 97 | 0) % CROWD_COLORS.length];
+        ctx.fillRect(x - 5, y - 13 - bob, 10, 11);           // body
+        ctx.fillStyle = '#f0c8a0';
+        ctx.fillRect(x - 3.5, y - 20 - bob, 7, 7);           // head
+      }
+    }
+    // Advertising board along the front of the stands
+    ctx.fillStyle = '#0d2238';
+    ctx.fillRect(x0, GROUND_Y - 26, x1 - x0, 26);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(x0, GROUND_Y - 26, x1 - x0, 3);
   }
 
   function cloud(x, y, s) {
