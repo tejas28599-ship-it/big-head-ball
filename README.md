@@ -20,10 +20,13 @@ On iPhone, Safari can't make websites full screen: tap **Share → Add to Home S
 
 - **A / D** or **← / →**: move
 - **W** or **↑**: jump
-- **Space**: kick
+- **Space**: kick (along the ground)
+- **S** or **↓**: air kick
 - **Esc** or **P**: pause
 
-**On a phone or tablet**, use the on-screen buttons: arrows at the bottom-left, **Kick** and **Jump** at the bottom-right. You don't have to hit the buttons exactly: anywhere on the left half of the screen moves you, and anywhere on the right half kicks or jumps. You can move and jump at the same time.
+**On a phone or tablet**, use the on-screen buttons: arrows at the bottom-left, **Kick**, **Air Kick** and **Jump** at the bottom-right. You don't have to hit the buttons exactly: anywhere on the left half of the screen moves you, and anywhere on the right half kicks or jumps. You can move and jump at the same time.
+
+There are two kicks. **Kick** drives the ball along the grass toward the other goal without bouncing. **Air Kick** lifts it in a high arc over your opponent's head, toward their side of the pitch.
 
 A goal counts when the ball fully crosses the line under the crossbar. Headers bounce off at the angle they hit your head, and running or jumping into the ball hits it harder. Choose **Easy**, **Normal** or **Hard** for the computer player.
 

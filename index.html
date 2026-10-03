@@ -276,7 +276,7 @@
       <button class="btn" id="fsMenuBtn">Full screen</button>
     </div>
     <div class="wins" id="winsLabel">Total wins: 0</div>
-    <div class="hint desk-only">Click the buttons, or use the keyboard: A/D or ←/→ move · W/↑ jump · Space kick · Esc pause</div>
+    <div class="hint desk-only">Click the buttons, or use the keyboard: A/D or ←/→ move · W/↑ jump · Space kick · S/↓ air kick · Esc pause</div>
     <div class="hint touch-only">Use the on-screen buttons to move, jump and kick</div>
   </div>
 
@@ -284,8 +284,9 @@
   <div id="touch" class="match-only">
     <div class="tbtn" data-action="left" aria-label="Move left"><svg viewBox="0 0 40 32"><path class="ico" d="M3 16 L19 2.5 V10 H37 V22 H19 V29.5 Z"/></svg></div>
     <div class="tbtn" data-action="right" aria-label="Move right"><svg viewBox="0 0 40 32"><path class="ico" d="M37 16 L21 2.5 V10 H3 V22 H21 V29.5 Z"/></svg></div>
-    <div class="tbtn labelled" data-action="kick" aria-label="Kick"><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M24 6 H34 V2 L44 9 L34 16 V12 H24 Z"/></svg><span>KICK</span></div>
-    <div class="tbtn labelled" data-action="jump" aria-label="Jump"><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M33 19 V11 H28 L36 1 L44 11 H39 V19 Z"/></svg><span>JUMP</span></div>
+    <div class="tbtn labelled" data-action="kick" aria-label="Kick along the ground"><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M24 6 H34 V2 L44 9 L34 16 V12 H24 Z"/></svg><span>KICK</span></div>
+    <div class="tbtn labelled" data-action="lob" aria-label="Air kick"><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M27 14 L35 6 L32 3 L45 1 L43 14 L40 11 L32 19 Z"/></svg><span>AIR KICK</span></div>
+    <div class="tbtn labelled" data-action="jump" aria-label="Jump"><svg viewBox="0 0 48 32"><path class="ico" d="M16 30 V16 H8 L24 1 L40 16 H32 V30 Z"/></svg><span>JUMP</span></div>
   </div>
 
   <div id="pause" class="overlay hidden">
@@ -339,7 +340,7 @@
 
   const RESTITUTION = 0.78;       // energy kept on each bounce (normal component)
   const BOUNCE_FRICTION = 0.97;   // tangential energy kept on each bounce
-  const ROLL_FRICTION = 0.6;      // per-second velocity decay while rolling
+  const ROLL_FRICTION = 0.85;     // per-second velocity decay while rolling
   const STOP_BOUNCE_SPEED = 60;   // below this, a bounce just settles
 
   // Goals: open mouth facing the pitch, crossbar on top, back = screen edge
@@ -380,9 +381,13 @@
   const KICK_DUR = 0.26;          // total swing time
   const KICK_OUT = 0.07;          // time to reach full extension
   const KICK_HOLD = 0.13;         // stays extended until this time
-  const KICK_SWING = 1.9;         // radians the leg rotates forward
-  const KICK_POWER = 1150;        // horizontal launch speed
-  const KICK_LIFT = 430;          // upward launch speed
+  // Two kicks: a ground shot that's driven along the grass without bouncing,
+  // and an air kick that lifts the ball in a high arc toward the other side.
+  const KICK = {
+    ground: { swing: 1.3, power: 1250, lift: 0 },     // leg swings low and forward
+    air:    { swing: 2.5, power: 760,  lift: 1000 },  // leg swings up under the ball
+  };
+  const GROUND_SHOT_TIME = 1.5;   // seconds a ground shot keeps the ball from bouncing
 
   // Players stay on the pitch between the goal mouths
   const P_MIN_X = GOAL_W + HEAD_R;
@@ -411,10 +416,12 @@
     px: WORLD_W / 2, py: KICKOFF_BALL_Y,  // previous position (for render interpolation)
     angle: 0, pAngle: 0,
     onGround: false,
+    groundShot: 0,                // > 0 while a ground shot is skimming along the grass
   };
 
   // ---------- Players ----------
-  const newInput = () => ({ left: false, right: false, jump: false, kick: false, jumpPressed: false, kickPressed: false });
+  const newInput = () => ({ left: false, right: false, jump: false, kick: false, lob: false,
+    jumpPressed: false, kickPressed: false, lobPressed: false });
   const NO_INPUT = Object.freeze(newInput());
 
   // (x, y) is the point between the feet, on the ground when standing.
@@ -428,11 +435,12 @@
       onGround: true,
       kickT: -1,                  // time into the current kick, -1 = not kicking
       kickHit: false,             // already struck the ball during this kick
+      kickType: 'ground',         // 'ground' | 'air'
       lastHeaderSfx: -1,
       jumpBuffer: 0,
       colors,
       input: newInput(),
-      ai: isAI ? { timer: 0, idle: 0, err: 0, errT: 0, wallT: 0 } : null,
+      ai: isAI ? { timer: 0, idle: 0, err: 0, errT: 0 } : null,
     };
   }
 
@@ -452,10 +460,10 @@
   }
 
   // Leg angle for a player at x,y: straight down at rest, swinging forward/up
-  function kickFoot(x, y, facing, t) {
+  function kickFoot(x, y, facing, t, type = 'ground') {
     const hipX = x + facing * 6;
     const hipY = y - HIP_OFFSET;
-    const a = Math.PI / 2 - facing * kickAmount(t) * KICK_SWING;
+    const a = Math.PI / 2 - facing * kickAmount(t) * KICK[type].swing;
     return {
       hipX, hipY, angle: a,
       x: hipX + Math.cos(a) * LEG_LEN,
@@ -564,11 +572,12 @@
     KeyD: 'right', ArrowRight: 'right',
     KeyW: 'jump', ArrowUp: 'jump',
     Space: 'kick',
+    KeyS: 'lob', ArrowDown: 'lob',
   };
 
   function pressAction(action) {
     const inp = human.input;
-    if (!inp[action] && (action === 'jump' || action === 'kick')) inp[action + 'Pressed'] = true;
+    if (!inp[action] && (action === 'jump' || action === 'kick' || action === 'lob')) inp[action + 'Pressed'] = true;
     inp[action] = true;
   }
   function releaseAction(action) {
@@ -580,7 +589,7 @@
     for (const a in touchHeld) { touchHeld[a] = false; keyHeld[a] = false; touchButtons[a].classList.remove('on'); }
   }
   // Which actions are held on the keyboard (so the on-screen button shows it)
-  const keyHeld = { left: false, right: false, jump: false, kick: false };
+  const keyHeld = { left: false, right: false, jump: false, kick: false, lob: false };
   function showPressed(a) {
     touchButtons[a].classList.toggle('on', touchHeld[a] || keyHeld[a]);
   }
@@ -650,9 +659,9 @@
   const touchButtons = {};
   touchEl.querySelectorAll('[data-action]').forEach(b => { touchButtons[b.dataset.action] = b; });
   const fingers = new Map();
-  const touchHeld = { left: false, right: false, jump: false, kick: false };
+  const touchHeld = { left: false, right: false, jump: false, kick: false, lob: false };
 
-  const touchLayout = { moveSplit: 0, actSplit: 0, rects: {} };
+  const touchLayout = { moveSplit: 0, actSplit: 0, actSplit2: 0, rects: {} };
 
   // Size and place the buttons from the real screen size and safe areas
   function layoutTouch() {
@@ -661,7 +670,7 @@
     const vw = view.w, vh = view.h;
     const usable = view.band - safe.bottom;
     const h = Math.round(usable * 0.72);
-    const wArrow = Math.round(h * 1.3), wAct = Math.round(h * 1.25);
+    const wArrow = Math.round(h * 1.3), wAct = Math.round(Math.min(h * 1.25, (vw * 0.5 - 40) / 3.6));
     const pad = Math.round(Math.max(14, vw * 0.035));
     const gap = Math.round(h * 0.3);
     const top = vh - view.band + Math.round((usable - h) / 2) - 3;   // a little up: room for the 3D base
@@ -675,13 +684,15 @@
       el.style.top = top + 'px';
     };
     const lx = safe.left + pad, rx = lx + wArrow + gap;
-    const jx = vw - safe.right - pad - wAct, kx = jx - wAct - gap;
+    const jx = vw - safe.right - pad - wAct, ax = jx - wAct - gap, kx = ax - wAct - gap;
     place('left', lx, wArrow);
     place('right', rx, wArrow);
     place('kick', kx, wAct);
+    place('lob', ax, wAct);
     place('jump', jx, wAct);
     touchLayout.moveSplit = (lx + rx + wArrow) / 2;
-    touchLayout.actSplit = (kx + jx + wAct) / 2;
+    touchLayout.actSplit = (kx + ax + wAct) / 2;     // kick | air kick
+    touchLayout.actSplit2 = (ax + jx + wAct) / 2;    // air kick | jump
   }
 
   function readSafeArea() {
@@ -706,7 +717,7 @@
       return null;
     }
     if (x < view.w / 2) return x < touchLayout.moveSplit ? 'left' : 'right';
-    return x < touchLayout.actSplit ? 'kick' : 'jump';
+    return x < touchLayout.actSplit ? 'kick' : x < touchLayout.actSplit2 ? 'lob' : 'jump';
   }
 
   function syncTouch() {
@@ -873,20 +884,20 @@
       inp.jumpPressed = true;
     }
 
-    // Kick when the ball is in front (to the left) and low enough for the foot
-    // Usually hold the kick if the opponent is standing right in front of the
-    // ball: blasting it into them just rebounds toward my own goal.
+    // Kick when the ball is in front (to the left) and low enough for the foot.
+    // If the opponent is standing right in front of the ball, chip it over
+    // them with an air kick (a ground shot would just rebound off them);
+    // otherwise mostly drive it along the ground, with the odd long lob.
     const front = p.x - ball.x;
     const opp = human;
-    // (Near their goal it's a shot, so always take it.)
-    const nearTheirGoal = ball.x < WORLD_W * 0.35;
-    const wall = !nearTheirGoal && opp.onGround && ball.x - opp.x > 0 && ball.x - opp.x < 110;
-    ai.wallT = wall ? ai.wallT + d.reaction : 0;
-    const impatient = ai.wallT > 0.8;   // stuck in a shoving match: kick anyway
+    const blocked = opp.onGround && ball.x - opp.x > 0 && ball.x - opp.x < 120;
     if (p.kickT < 0 && front > 0 && front < 85 && ball.y > p.y - 95 &&
-        (!wall || impatient) && Math.random() < d.kickChance) {
-      ai.wallT = 0;
-      inp.kickPressed = true;
+        Math.random() < d.kickChance) {
+      // An air kick carries ~840 units, so it only makes sense from far out
+      const lobLands = ball.x > 700;
+      const lobChance = blocked ? (lobLands ? 0.75 : 0.2) : (lobLands ? 0.3 : 0.05);
+      if (Math.random() < lobChance) inp.lobPressed = true;
+      else inp.kickPressed = true;
     }
   }
 
@@ -1011,10 +1022,15 @@
         if (master) master.gain.setTargetAtTime(muted ? 0 : 0.7, ac.currentTime, 0.02);
         return muted;
       },
-      kick() {
+      kick(type) {
         play((t) => {
-          tone('sine', 170, 45, t, 0.16, 0.9);
-          noise(t, 0.05, 0.35, 'lowpass', 1800);
+          if (type === 'air') {
+            tone('sine', 260, 90, t, 0.14, 0.8);
+            tone('triangle', 620, 380, t, 0.06, 0.25);
+          } else {
+            tone('sine', 170, 45, t, 0.16, 0.9);
+          }
+          noise(t, 0.05, 0.35, 'lowpass', type === 'air' ? 2600 : 1800);
         });
       },
       header(speed) {
@@ -1213,12 +1229,14 @@
 
     clampToPitch(p);
 
-    // Kick
-    if (inp.kickPressed && p.kickT < 0) {
+    // Kick (ground shot or air kick)
+    if ((inp.kickPressed || inp.lobPressed) && p.kickT < 0) {
       p.kickT = 0;
       p.kickHit = false;
+      p.kickType = inp.lobPressed ? 'air' : 'ground';
     }
     p.input.kickPressed = false;
+    p.input.lobPressed = false;
     if (p.kickT >= 0) {
       p.kickT += dt;
       if (p.kickT >= KICK_DUR) p.kickT = -1;
@@ -1296,6 +1314,7 @@
 
     ball.x += nx * pen;
     ball.y += ny * pen;
+    ball.groundShot = 0;                     // touched a player: normal bounces again
 
     const rvx = ball.vx - p.vx;
     const rvy = ball.vy - p.vy;
@@ -1321,15 +1340,25 @@
 
     // Kick: the swinging foot launches the ball once per kick
     if (p.kickT >= 0 && !p.kickHit && kickAmount(p.kickT) > 0.25) {
-      const f = kickFoot(p.x, p.y, p.facing, p.kickT);
+      const f = kickFoot(p.x, p.y, p.facing, p.kickT, p.kickType);
       const dx = ball.x - f.x;
       const dy = ball.y - f.y;
       const reach = FOOT_R + ball.r + 4;
       if (dx * dx + dy * dy < reach * reach) {
         p.kickHit = true;
-        sfx.kick();
-        ball.vx = p.facing * KICK_POWER + p.vx * 0.4;
-        ball.vy = -KICK_LIFT + Math.min(0, p.vy * 0.3);
+        const k = KICK[p.kickType];
+        sfx.kick(p.kickType);
+        if (p.kickType === 'ground') {
+          // Driven along the grass: no lift, and pushed down if it was in the air
+          ball.vx = p.facing * k.power + p.vx * 0.4;
+          ball.vy = ball.y + ball.r < GROUND_Y - 4 ? 300 : 0;
+          ball.groundShot = GROUND_SHOT_TIME;
+        } else {
+          // Lofted: a high arc toward the other side
+          ball.vx = p.facing * k.power + p.vx * 0.3;
+          ball.vy = -k.lift + Math.min(0, p.vy * 0.25);
+          ball.groundShot = 0;
+        }
         // Make sure the ball starts clear of the foot
         const d = Math.hypot(dx, dy) || 1;
         const pen = reach - d;
@@ -1392,6 +1421,7 @@
 
     // Spin the ball according to horizontal travel
     ball.angle += (ball.vx * dt) / r;
+    if (ball.groundShot > 0) ball.groundShot = Math.max(0, ball.groundShot - dt);
 
     gameTime += dt;
     checkSlowmo();
@@ -1411,7 +1441,11 @@
 
     let newVn = -vn * RESTITUTION;
     if (newVn < STOP_BOUNCE_SPEED) newVn = 0; // settle instead of micro-bouncing
-    const newVt = vt * BOUNCE_FRICTION;
+    if (ny < 0 && ball.groundShot > 0) newVn = 0;   // ground shot hugs the grass
+    if (ny >= 0) ball.groundShot = 0;               // hit a wall or the ceiling
+    // Friction only on a real bounce; a ball rolling along the grass is
+    // slowed by ROLL_FRICTION instead (otherwise it would stop almost at once)
+    const newVt = -vn > STOP_BOUNCE_SPEED ? vt * BOUNCE_FRICTION : vt;
 
     ball.vx = newVn * nx + newVt * tx;
     ball.vy = newVn * ny + newVt * ty;
@@ -1456,6 +1490,7 @@
       sfx.crossbar(impact);
       if (impact > 700) addShake(5, 0.2);
     }
+    ball.groundShot = 0;
     bounce(nx, ny);
     if (ny < -0.7) {
       // Resting on top of the crossbar counts as rolling surface too
@@ -1501,11 +1536,12 @@
       p.onGround = true;
       p.kickT = -1;
       p.jumpBuffer = 0;
-      if (p.ai) Object.assign(p.ai, { timer: 0.3, idle: 0, err: 0, errT: 0, wallT: 0 });
+      if (p.ai) Object.assign(p.ai, { timer: 0.3, idle: 0, err: 0, errT: 0 });
     }
     ball.x = ball.px = WORLD_W / 2;
     ball.y = ball.py = KICKOFF_BALL_Y;
     ball.vx = ball.vy = 0;
+    ball.groundShot = 0;
     slowmoArmed = true;
     clearInputs();
   }
@@ -2205,7 +2241,7 @@
     ctx.fill();
 
     // Kicking leg
-    const k = kickFoot(x, y, f, p.kickT);
+    const k = kickFoot(x, y, f, p.kickT, p.kickType);
     const footX = k.hipX + Math.cos(k.angle) * (LEG_LEN - FOOT_R * 0.6);
     const footY = k.hipY + Math.sin(k.angle) * (LEG_LEN - FOOT_R * 0.6);
     ctx.strokeStyle = skin;
