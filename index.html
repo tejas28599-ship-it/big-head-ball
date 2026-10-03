@@ -445,10 +445,11 @@
   const FIXED_DT = 1 / 120;       // physics step
   const MAX_FRAME = 0.25;         // avoid spiral of death after tab switches
 
-  const RESTITUTION = 0.78;       // energy kept on each bounce (normal component)
-  const BOUNCE_FRICTION = 0.97;   // tangential energy kept on each bounce
+  const RESTITUTION = 0.55;       // speed kept on each bounce (normal component)
+  const BOUNCE_FRICTION = 0.9;    // tangential speed kept on each real bounce
+  const AIR_DRAG = 0.12;          // per-second speed loss in the air
   const ROLL_FRICTION = 0.85;     // per-second velocity decay while rolling
-  const STOP_BOUNCE_SPEED = 60;   // below this, a bounce just settles
+  const STOP_BOUNCE_SPEED = 110;  // below this, a bounce just settles
 
   // Goals: open mouth facing the pitch, crossbar on top, back = screen edge
   const GOAL_W = 100;
@@ -481,9 +482,9 @@
   const LEG_LEN = 33;
   const FOOT_R = 13;
 
-  const HEAD_BOUNCE = 0.8;        // restitution vs the head
-  const BODY_BOUNCE = 0.45;       // restitution vs the body
-  const HEAD_MIN_POP = 260;       // headers always pop the ball away a bit
+  const HEAD_BOUNCE = 0.62;       // restitution vs the head
+  const BODY_BOUNCE = 0.32;       // restitution vs the body
+  const HEAD_MIN_POP = 200;       // headers always pop the ball away a bit
 
   const KICK_DUR = 0.26;          // total swing time
   const KICK_OUT = 0.07;          // time to reach full extension
@@ -1503,6 +1504,11 @@
     ball.pAngle = ball.angle;
 
     ball.vy += GRAVITY * dt;
+    if (!ball.onGround) {
+      const drag = 1 - AIR_DRAG * dt;
+      ball.vx *= drag;
+      ball.vy *= drag;
+    }
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
 
@@ -1847,7 +1853,6 @@
 
     layers.bg = offscreen(w, h, k);
     drawInto(layers.bg, k, x0, y0, () => drawStaticStadium(x0, y0, w, h));
-    buildGoalNet(k);
 
     // Fan sprite sheets: one strip per row of seats
     layers.rows = [];
@@ -2245,77 +2250,71 @@
   }
 
   // ---------- Goals ----------
-  // Drawn as a 3D frame seen slightly from above: the front post at the goal
-  // mouth, a back post set deeper (higher on screen), a ground bar between
-  // them and a hexagonal net. The left goal is drawn in its own coordinates
-  // and mirrored for the right one. The net is pre-rendered (buildGoalNet);
-  // the front post and crossbar are drawn after the ball so a ball in the
-  // goal sits behind them.
-  const GOAL_FRONT_X = GOAL_W - 4;          // front post centre
-  const GOAL_BACK_X = 10;                   // back post centre
-  const GOAL_BACK_GROUND = GROUND_Y - 30;   // back of the goal floor (further away = higher)
-  const GOAL_TOP = GROUND_Y - GOAL_H;       // underside of the crossbar
-  const goalRipple = [0, 0];                // net wobble per goal (left, right)
-  const goalNet = { img: null, x0: -14, y0: GOAL_TOP - BAR_H - 10, w: GOAL_W + 24, h: GOAL_H + BAR_H + 26 };
+  // Each goal is a 3D box standing on the (perspective) goal line. The ball
+  // and players move in the middle depth of the pitch (the GROUND_Y line),
+  // so the near post stands in front of that line (lower on screen) and the
+  // far post behind it (higher), and the crossbar between them passes
+  // exactly through the physics crossbar. The far post, back, roof and far
+  // side net are drawn behind the ball; the near side net, near post and
+  // crossbar in front of it, so a ball in the goal really sits inside.
+  // Everything is drawn for the left goal and mirrored for the right one.
+  const GOAL_SLANT = 0.36;               // goal line lean, same as the pitch markings
+  const GOAL_NEAR_Y = GROUND_Y + 48;     // ground level of the near post
+  const GOAL_FAR_Y = GROUND_Y - 44;      // ground level of the far post
+  const GOAL_DEPTH = 92;                 // how far the net goes back
+  const GOAL_TOP = GROUND_Y - GOAL_H;    // underside of the crossbar at mid depth
+  const goalRipple = [0, 0];             // net wobble per goal (left, right)
 
-  function netShape() {
-    ctx.beginPath();
-    ctx.moveTo(GOAL_FRONT_X, GOAL_TOP - 2);
-    ctx.lineTo(GOAL_BACK_X, GOAL_TOP - 8);
-    ctx.lineTo(GOAL_BACK_X - 2, GOAL_BACK_GROUND);
-    ctx.lineTo(GOAL_FRONT_X, GROUND_Y);
-    ctx.closePath();
+  // Goal-line x at a given ground y (left goal)
+  const goalLineX = (y) => GOAL_W + (GROUND_Y - y) * GOAL_SLANT;
+
+  function goalPoints(bulge) {
+    const nx = goalLineX(GOAL_NEAR_Y), fx = goalLineX(GOAL_FAR_Y);
+    // Post height grows a touch toward the camera so the box reads as 3D
+    // (chosen so the crossbar crosses the ball's plane right on the physics bar)
+    const nh = GOAL_H + 20, fh = GOAL_H - 6;
+    const back = GOAL_DEPTH + bulge;
+    return {
+      nb: [nx, GOAL_NEAR_Y], nt: [nx, GOAL_NEAR_Y - nh],
+      fb: [fx, GOAL_FAR_Y], ft: [fx, GOAL_FAR_Y - fh],
+      nbB: [nx - back, GOAL_NEAR_Y], ntB: [nx - back, GOAL_NEAR_Y - nh],
+      fbB: [fx - back, GOAL_FAR_Y], ftB: [fx - back, GOAL_FAR_Y - fh],
+    };
   }
 
-  function buildGoalNet(k) {
-    const n = goalNet;
-    n.img = offscreen(n.w, n.h, k);
-    drawInto(n.img, k, n.x0, n.y0, () => {
-      // Shaded net body: darker at the back, as if lit from the pitch
-      netShape();
-      const shade = ctx.createLinearGradient(GOAL_BACK_X, 0, GOAL_FRONT_X, 0);
-      shade.addColorStop(0, 'rgba(10, 25, 45, 0.45)');
-      shade.addColorStop(1, 'rgba(255, 255, 255, 0.10)');
-      ctx.fillStyle = shade;
-      ctx.fill();
+  // A perspective mesh across the quad a-b-c-d (a-b and d-c are opposite edges)
+  function netPanel(a, b, c, d, nu, nv, fill, line) {
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    const lerp2 = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    for (let i = 1; i < nu; i++) {
+      const t = i / nu, p = lerp2(a, b, t), q = lerp2(d, c, t);
+      ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]);
+    }
+    for (let j = 1; j < nv; j++) {
+      const t = j / nv, p = lerp2(a, d, t), q = lerp2(b, c, t);
+      ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]);
+    }
+    ctx.stroke();
+  }
 
-      // Hexagonal mesh, clipped to the net
-      ctx.save();
-      netShape();
-      ctx.clip();
-      const r = 7.5, hw = Math.sqrt(3) * r;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      for (let row = 0, y = GOAL_TOP - 20; y < GROUND_Y + 20; row++, y += r * 1.5) {
-        for (let x = -20 + (row % 2) * hw / 2; x < GOAL_W + 20; x += hw) {
-          for (let i = 0; i < 6; i++) {
-            const a0 = Math.PI / 6 + (i * Math.PI) / 3, a1 = a0 + Math.PI / 3;
-            ctx.moveTo(x + Math.cos(a0) * r, y + Math.sin(a0) * r);
-            ctx.lineTo(x + Math.cos(a1) * r, y + Math.sin(a1) * r);
-          }
-        }
-      }
-      ctx.stroke();
-      ctx.restore();
-
-      // Back post and the ground bar running back along the floor
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#b9c3cf';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.moveTo(GOAL_BACK_X, GOAL_TOP - 8);
-      ctx.lineTo(GOAL_BACK_X - 2, GOAL_BACK_GROUND);
-      ctx.lineTo(GOAL_FRONT_X, GROUND_Y);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(GOAL_BACK_X - 1.5, GOAL_TOP - 6);
-      ctx.lineTo(GOAL_BACK_X - 3, GOAL_BACK_GROUND - 2);
-      ctx.stroke();
-      ctx.lineCap = 'butt';
-    });
+  function tube(p, q, width, color, edge) {
+    ctx.lineCap = 'round';
+    if (edge) {
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = width + 2.5;
+      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+    ctx.lineCap = 'butt';
   }
 
   // Mirror helper: run fn in the left goal's coordinates for either side
@@ -2326,74 +2325,58 @@
     ctx.restore();
   }
 
-  // Net (behind the players and ball)
+  function netBulge(i) {
+    const rip = goalRipple[i];
+    return rip > 0.01 ? rip * (6 + Math.sin(performance.now() / 1000 * 26) * 4) : 0;
+  }
+
+  // Back half of the goal: shadow, far post, back frame and the nets behind the ball
   function drawGoal(g) {
-    if (!goalNet.img) return;
     inGoalSpace(g, (i) => {
-      const n = goalNet, rip = goalRipple[i];
-      // Shadow of the goal on the grass
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      const P = goalPoints(netBulge(i));
+      const F = goalPoints(0);                       // frame doesn't billow
+
+      // Shadow on the grass under the box
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
       ctx.beginPath();
-      ctx.moveTo(GOAL_FRONT_X + 6, GROUND_Y + 2);
-      ctx.lineTo(GOAL_BACK_X + 2, GOAL_BACK_GROUND + 2);
-      ctx.lineTo(GOAL_BACK_X + 30, GOAL_BACK_GROUND + 6);
-      ctx.lineTo(GOAL_FRONT_X + 30, GROUND_Y + 6);
-      ctx.closePath();
-      ctx.fill();
-      if (rip > 0.01) {
-        // The net billows back and shivers after a goal or a hard hit
-        const t = performance.now() / 1000;
-        const bulge = Math.sin(t * 28) * 4 * rip;
-        ctx.save();
-        ctx.translate(GOAL_FRONT_X, GROUND_Y);
-        ctx.transform(1, 0, (Math.sin(t * 19) * 0.05 * rip), 1, -bulge, 0);
-        ctx.translate(-GOAL_FRONT_X, -GROUND_Y);
-        ctx.drawImage(n.img, n.x0, n.y0, n.w, n.h);
-        ctx.restore();
-      } else {
-        ctx.drawImage(n.img, n.x0, n.y0, n.w, n.h);
-      }
+      ctx.moveTo(F.nb[0], F.nb[1]); ctx.lineTo(F.fb[0], F.fb[1]);
+      ctx.lineTo(F.fbB[0], F.fbB[1]); ctx.lineTo(F.nbB[0], F.nbB[1]);
+      ctx.closePath(); ctx.fill();
+
+      const backFill = 'rgba(16, 36, 62, 0.30)', backLine = 'rgba(255, 255, 255, 0.42)';
+      const sideFill = 'rgba(255, 255, 255, 0.07)', sideLine = 'rgba(255, 255, 255, 0.6)';
+      netPanel(P.ntB, P.ftB, P.fbB, P.nbB, 8, 18, backFill, backLine);       // back
+      netPanel(F.ft, P.ftB, P.fbB, F.fb, 6, 16, sideFill, sideLine);         // far side
+      netPanel(F.nt, P.ntB, P.ftB, F.ft, 6, 9, sideFill, sideLine);          // roof
+
+      // Back frame and far post (thinner and greyer: further away)
+      tube(F.ntB, F.ftB, 4, '#c3ccd6');
+      tube(F.ntB, F.nbB, 4, '#c3ccd6');
+      tube(F.ftB, F.fbB, 4, '#c3ccd6');
+      tube(F.nbB, F.fbB, 3.5, '#e2e7ed');
+      tube(F.fbB, F.fb, 3.5, '#e2e7ed');
+      tube(F.ft, F.ftB, 4, '#d5dce4');
+      tube(F.fb, F.ft, 7, '#e9edf2', 'rgba(13,34,56,0.25)');
     });
   }
 
-  // Front frame: post + crossbar (drawn over the ball)
+  // Front half: near side net, ground bar, near post and crossbar (over the ball)
   function drawCrossbar(bar) {
     const g = bar.x < WORLD_W / 2 ? goals[0] : goals[1];
-    inGoalSpace(g, () => {
-      // Crossbar: runs from the front post back to the back post, white with a shaded underside
-      const top = GOAL_TOP - BAR_H;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(GOAL_FRONT_X + 5, top);
-      ctx.lineTo(GOAL_BACK_X - 4, top - 6);
-      ctx.lineTo(GOAL_BACK_X - 4, GOAL_TOP - 8);
-      ctx.lineTo(GOAL_FRONT_X + 5, GOAL_TOP);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = 'rgba(30, 50, 80, 0.28)';
-      ctx.beginPath();
-      ctx.moveTo(GOAL_FRONT_X + 5, GOAL_TOP - 4);
-      ctx.lineTo(GOAL_BACK_X - 4, GOAL_TOP - 11);
-      ctx.lineTo(GOAL_BACK_X - 4, GOAL_TOP - 8);
-      ctx.lineTo(GOAL_FRONT_X + 5, GOAL_TOP);
-      ctx.closePath();
-      ctx.fill();
-
-      // Front post: a white cylinder, shaded on one side
-      const px = GOAL_FRONT_X - 5, pw = 10;
-      const cyl = ctx.createLinearGradient(px, 0, px + pw, 0);
-      cyl.addColorStop(0, '#c7d0db');
-      cyl.addColorStop(0.45, '#ffffff');
-      cyl.addColorStop(1, '#dfe5ec');
-      ctx.fillStyle = cyl;
-      roundRect(px, top, pw, GROUND_Y - top + 2, 4);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(13, 34, 56, 0.35)';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      // corner joint
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(GOAL_FRONT_X, top + 5, 6, 0, Math.PI * 2); ctx.fill();
+    inGoalSpace(g, (i) => {
+      const P = goalPoints(netBulge(i));
+      const F = goalPoints(0);
+      netPanel(F.nt, P.ntB, P.nbB, F.nb, 6, 16, 'rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.55)');
+      tube(F.nb, F.nbB, 4, '#eef1f5');
+      tube(F.nt, F.ntB, 5, '#f4f6f9', 'rgba(13,34,56,0.25)');
+      // Crossbar and near post: thick white tubes with a soft outline and a highlight
+      tube(F.nt, F.ft, 9, '#ffffff', 'rgba(13,34,56,0.35)');
+      tube(F.nb, F.nt, 10, '#ffffff', 'rgba(13,34,56,0.35)');
+      tube([F.nb[0] - 2, F.nb[1] - 4], [F.nt[0] - 2, F.nt[1] + 4], 2.5, 'rgba(160, 175, 192, 0.8)');
+      tube([F.nt[0], F.nt[1] - 2], [F.ft[0], F.ft[1] - 2], 2.5, 'rgba(255,255,255,1)');
+      // Post foot shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath(); ctx.ellipse(F.nb[0] + 4, F.nb[1] + 2, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
     });
   }
 
