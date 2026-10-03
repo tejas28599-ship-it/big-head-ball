@@ -44,7 +44,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: max(10px, calc(var(--u) * 24));
+    gap: max(8px, calc(var(--u) * 20));
     background: radial-gradient(ellipse at center, rgba(8, 30, 56, 0.35), rgba(8, 30, 56, 0.75));
     color: #fff;
     text-align: center;
@@ -211,6 +211,92 @@
   }
   .ico { fill: #fff; stroke: #5c3200; stroke-width: 2.4; stroke-linejoin: round; paint-order: stroke fill; }
 
+  /* Keyboard guide (computers only): keycap tags on the buttons + a panel */
+  .kbd-tag {
+    position: absolute;
+    top: -0.2em;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0.04em 0.14em;
+    font-size: max(12px, 0.2em);
+    font-weight: 900;
+    line-height: 1.25;
+    white-space: nowrap;
+    color: #0d2238;
+    background: linear-gradient(180deg, #ffffff, #dde5ee);
+    border: 2px solid #0d2238;
+    border-radius: 6px;
+    box-shadow: 0 2px 0 #0d2238;
+  }
+  body.touch .kbd-tag { display: none; }
+  .keys-guide {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: max(6px, calc(var(--u) * 10));
+    padding: max(8px, calc(var(--u) * 14)) max(12px, calc(var(--u) * 24));
+    background: rgba(8, 22, 40, 0.82);
+    border: 3px solid #0d2238;
+    border-radius: max(10px, calc(var(--u) * 18));
+    box-shadow: 0 5px 0 #0d2238;
+  }
+  .keys-guide .kg-title {
+    font-size: max(11px, calc(var(--u) * 18));
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    color: #ffd23f;
+  }
+  .keys-guide .kg-row {
+    display: flex;
+    gap: max(12px, calc(var(--u) * 30));
+    align-items: flex-start;
+  }
+  .kg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: max(4px, calc(var(--u) * 7));
+  }
+  .kg-keys {
+    display: flex;
+    align-items: center;
+    gap: max(3px, calc(var(--u) * 5));
+  }
+  .kg-keys i {
+    font-style: normal;
+    font-weight: 700;
+    font-size: max(10px, calc(var(--u) * 15));
+    opacity: 0.7;
+    margin: 0 2px;
+  }
+  .kg-label {
+    font-size: max(12px, calc(var(--u) * 19));
+    font-weight: 800;
+    color: #fff;
+  }
+  .key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: max(24px, calc(var(--u) * 40));
+    height: max(24px, calc(var(--u) * 40));
+    padding: 0 max(5px, calc(var(--u) * 8));
+    box-sizing: border-box;
+    font-size: max(12px, calc(var(--u) * 19));
+    font-weight: 900;
+    color: #0d2238;
+    background: linear-gradient(180deg, #ffffff, #d6dfea);
+    border: 2px solid #0d2238;
+    border-radius: max(5px, calc(var(--u) * 8));
+    box-shadow: 0 3px 0 #0d2238;
+  }
+  .key.wide { min-width: max(64px, calc(var(--u) * 110)); }
+  .keys-guide .kg-foot {
+    font-size: max(11px, calc(var(--u) * 16));
+    font-weight: 700;
+    opacity: 0.8;
+  }
+
   .wins {
     font-size: max(14px, calc(var(--u) * 28));
     font-weight: 900;
@@ -276,17 +362,27 @@
       <button class="btn" id="fsMenuBtn">Full screen</button>
     </div>
     <div class="wins" id="winsLabel">Total wins: 0</div>
-    <div class="hint desk-only">Click the buttons, or use the keyboard: A/D or ←/→ move · W/↑ jump · Space kick · S/↓ air kick · Esc pause</div>
+    <div class="keys-guide desk-only">
+      <div class="kg-title">KEYBOARD CONTROLS</div>
+      <div class="kg-row">
+        <div class="kg"><div class="kg-keys"><span class="key">A</span><span class="key">D</span><i>or</i><span class="key">←</span><span class="key">→</span></div><div class="kg-label">Move</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key">W</span><i>or</i><span class="key">↑</span></div><div class="kg-label">Jump</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key wide">Space</span></div><div class="kg-label">Kick</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key">S</span><i>or</i><span class="key">↓</span></div><div class="kg-label">Air kick</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key">Esc</span></div><div class="kg-label">Pause</div></div>
+      </div>
+      <div class="kg-foot">or click the buttons at the bottom of the screen</div>
+    </div>
     <div class="hint touch-only">Use the on-screen buttons to move, jump and kick</div>
   </div>
 
 
   <div id="touch" class="match-only">
-    <div class="tbtn" data-action="left" aria-label="Move left"><svg viewBox="0 0 40 32"><path class="ico" d="M3 16 L19 2.5 V10 H37 V22 H19 V29.5 Z"/></svg></div>
-    <div class="tbtn" data-action="right" aria-label="Move right"><svg viewBox="0 0 40 32"><path class="ico" d="M37 16 L21 2.5 V10 H3 V22 H21 V29.5 Z"/></svg></div>
-    <div class="tbtn labelled" data-action="kick" aria-label="Kick along the ground"><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M24 6 H34 V2 L44 9 L34 16 V12 H24 Z"/></svg><span>KICK</span></div>
-    <div class="tbtn labelled" data-action="lob" aria-label="Air kick"><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M27 14 L35 6 L32 3 L45 1 L43 14 L40 11 L32 19 Z"/></svg><span>AIR KICK</span></div>
-    <div class="tbtn labelled" data-action="jump" aria-label="Jump"><svg viewBox="0 0 48 32"><path class="ico" d="M16 30 V16 H8 L24 1 L40 16 H32 V30 Z"/></svg><span>JUMP</span></div>
+    <div class="tbtn" data-action="left" aria-label="Move left"><b class="kbd-tag">A / ←</b><svg viewBox="0 0 40 32"><path class="ico" d="M3 16 L19 2.5 V10 H37 V22 H19 V29.5 Z"/></svg></div>
+    <div class="tbtn" data-action="right" aria-label="Move right"><b class="kbd-tag">D / →</b><svg viewBox="0 0 40 32"><path class="ico" d="M37 16 L21 2.5 V10 H3 V22 H21 V29.5 Z"/></svg></div>
+    <div class="tbtn labelled" data-action="kick" aria-label="Kick along the ground"><b class="kbd-tag">SPACE</b><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M24 6 H34 V2 L44 9 L34 16 V12 H24 Z"/></svg><span>KICK</span></div>
+    <div class="tbtn labelled" data-action="lob" aria-label="Air kick"><b class="kbd-tag">S / ↓</b><svg viewBox="0 0 48 32"><path class="ico" d="M3 11 H15 V18 L31 21 C37 22 40 24.5 40 28 V30 H3 Z"/><path class="ico" d="M27 14 L35 6 L32 3 L45 1 L43 14 L40 11 L32 19 Z"/></svg><span>AIR KICK</span></div>
+    <div class="tbtn labelled" data-action="jump" aria-label="Jump"><b class="kbd-tag">W / ↑</b><svg viewBox="0 0 48 32"><path class="ico" d="M16 30 V16 H8 L24 1 L40 16 H32 V30 Z"/></svg><span>JUMP</span></div>
   </div>
 
   <div id="pause" class="overlay hidden">
@@ -297,6 +393,17 @@
     <div class="row">
       <button class="btn" id="restartBtn">Restart</button>
       <button class="btn" id="pauseMenuBtn">Menu</button>
+    </div>
+    <div class="keys-guide desk-only">
+      <div class="kg-title">KEYBOARD CONTROLS</div>
+      <div class="kg-row">
+        <div class="kg"><div class="kg-keys"><span class="key">A</span><span class="key">D</span><i>or</i><span class="key">←</span><span class="key">→</span></div><div class="kg-label">Move</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key">W</span><i>or</i><span class="key">↑</span></div><div class="kg-label">Jump</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key wide">Space</span></div><div class="kg-label">Kick</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key">S</span><i>or</i><span class="key">↓</span></div><div class="kg-label">Air kick</div></div>
+        <div class="kg"><div class="kg-keys"><span class="key">Esc</span></div><div class="kg-label">Pause</div></div>
+      </div>
+      <div class="kg-foot">or click the buttons at the bottom of the screen</div>
     </div>
   </div>
 
