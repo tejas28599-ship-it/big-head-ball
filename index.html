@@ -612,9 +612,31 @@
   //   left half  -> left / right (split halfway between the two arrows)
   //   right half -> kick / jump  (split halfway between those buttons)
   // Sliding a thumb across a split switches action without lifting it.
-  const isTouch = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+  //
+  // Touch mode (on-screen buttons + control band) is detected at load, and
+  // switched on later if a finger touches the screen or the browser starts
+  // reporting a touch screen (touch laptops, a browser's phone preview turned
+  // on after loading). Add ?touch to the URL to force it on with a mouse.
+  const FORCE_TOUCH = new URLSearchParams(location.search).has('touch');
+  const detectTouch = () => FORCE_TOUCH ||
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
     'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
-  if (isTouch) document.body.classList.add('touch');
+  let isTouch = detectTouch();
+  document.body.classList.toggle('touch', isTouch);
+
+  function setTouchMode(on) {
+    if (on === isTouch) return;
+    isTouch = on;
+    document.body.classList.toggle('touch', on);
+    resize();
+  }
+  window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') setTouchMode(true); }, true);
+  if (window.matchMedia) {
+    const coarseMQ = window.matchMedia('(pointer: coarse)');
+    const onPointerChange = () => setTouchMode(detectTouch());
+    if (coarseMQ.addEventListener) coarseMQ.addEventListener('change', onPointerChange);
+    else if (coarseMQ.addListener) coarseMQ.addListener(onPointerChange);
+  }
 
   const touchEl = document.getElementById('touch');
   const touchButtons = {};
