@@ -175,8 +175,7 @@
     z-index: 1;
     touch-action: none;
   }
-  /* (Extra #stage so this beats the in-match "show" rule above) */
-  body:not(.touch) #stage #touch { display: none !important; }
+  body:not(.touch) #touch.over-btn { cursor: pointer; }
   .tbtn {
     position: absolute;
     width: 120px;
@@ -277,7 +276,7 @@
       <button class="btn" id="fsMenuBtn">Full screen</button>
     </div>
     <div class="wins" id="winsLabel">Total wins: 0</div>
-    <div class="hint desk-only">A/D or ←/→ move · W/↑ jump · Space kick · Esc pause</div>
+    <div class="hint desk-only">Click the buttons, or use the keyboard: A/D or ←/→ move · W/↑ jump · Space kick · Esc pause</div>
     <div class="hint touch-only">Use the on-screen buttons to move, jump and kick</div>
   </div>
 
@@ -487,15 +486,15 @@
   // Pre-rendered stadium layers, rebuilt after every resize (see buildLayers)
   const layers = { dirty: true, bg: null, idle: null, cheer: null, x0: 0, y0: 0, w: 0, h: 0, k: 1, ks: 1, rows: [], cx0: 0, chunks: 0, flags: [] };
 
-  // On touch screens a control band runs along the bottom so thumbs never cover
-  // the pitch. When space is tight, up to CROP_TOP units of the world's top
+  // A control band with the on-screen buttons runs along the bottom (on every
+  // device), so fingers and the mouse never cover the pitch. When space is tight, up to CROP_TOP units of the world's top
   // (roof and upper stands) may be cut off so the players can be drawn bigger.
   const CROP_TOP = 110;
 
   function resize() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const band = isTouch ? Math.round(Math.max(70, Math.min(124, vh * 0.23))) + readSafeArea().bottom : 0;
+    const band = Math.round(Math.max(70, Math.min(isTouch ? 124 : 110, vh * (isTouch ? 0.23 : 0.17)))) + readSafeArea().bottom;
     const availH = vh - band;
     let scale = Math.min(vw / WORLD_W, availH / WORLD_H);
     const cropScale = Math.min(vw / WORLD_W, availH / (WORLD_H - CROP_TOP));
@@ -578,7 +577,12 @@
   function clearInputs() {
     for (const p of players) Object.assign(p.input, newInput());
     fingers.clear();
-    for (const a in touchHeld) { touchHeld[a] = false; touchButtons[a].classList.remove('on'); }
+    for (const a in touchHeld) { touchHeld[a] = false; keyHeld[a] = false; touchButtons[a].classList.remove('on'); }
+  }
+  // Which actions are held on the keyboard (so the on-screen button shows it)
+  const keyHeld = { left: false, right: false, jump: false, kick: false };
+  function showPressed(a) {
+    touchButtons[a].classList.toggle('on', touchHeld[a] || keyHeld[a]);
   }
 
   window.addEventListener('keydown', (e) => {
@@ -597,12 +601,16 @@
     if (!action) return;
     e.preventDefault();
     pressAction(action);
+    keyHeld[action] = true;
+    showPressed(action);
   });
   window.addEventListener('keyup', (e) => {
     const action = KEYMAP[e.code];
     if (!action) return;
     e.preventDefault();
     releaseAction(action);
+    keyHeld[action] = false;
+    showPressed(action);
   });
   window.addEventListener('blur', clearInputs);
 
@@ -644,7 +652,7 @@
   const fingers = new Map();
   const touchHeld = { left: false, right: false, jump: false, kick: false };
 
-  const touchLayout = { moveSplit: 0, actSplit: 0 };
+  const touchLayout = { moveSplit: 0, actSplit: 0, rects: {} };
 
   // Size and place the buttons from the real screen size and safe areas
   function layoutTouch() {
@@ -658,6 +666,7 @@
     const gap = Math.round(h * 0.3);
     const top = vh - view.band + Math.round((usable - h) / 2) - 3;   // a little up: room for the 3D base
     const place = (a, x, w) => {
+      touchLayout.rects[a] = { x, y: top, w, h };
       const el = touchButtons[a];
       el.style.width = w + 'px';
       el.style.height = h + 'px';
@@ -686,7 +695,16 @@
     return r;
   }
 
-  function buttonAt(x) {
+  // A finger anywhere on a screen half counts (forgiving zones); a mouse has
+  // to be on (or within a few px of) an actual button.
+  function buttonAt(x, y, pointerType) {
+    if (pointerType === 'mouse' || pointerType === 'pen') {
+      for (const a in touchLayout.rects) {
+        const r = touchLayout.rects[a], m = 6;
+        if (x >= r.x - m && x <= r.x + r.w + m && y >= r.y - m && y <= r.y + r.h + m + 8) return a;
+      }
+      return null;
+    }
     if (x < view.w / 2) return x < touchLayout.moveSplit ? 'left' : 'right';
     return x < touchLayout.actSplit ? 'kick' : 'jump';
   }
@@ -701,19 +719,20 @@
       }
       if (!on && touchHeld[a]) releaseAction(a);
       touchHeld[a] = on;
-      touchButtons[a].classList.toggle('on', on);
+      showPressed(a);
     }
   }
 
   touchEl.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    fingers.set(e.pointerId, buttonAt(e.clientX));
+    fingers.set(e.pointerId, buttonAt(e.clientX, e.clientY, e.pointerType));
     syncTouch();
   });
   touchEl.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'mouse') touchEl.classList.toggle('over-btn', !!buttonAt(e.clientX, e.clientY, 'mouse'));
     if (!fingers.has(e.pointerId)) return;
     e.preventDefault();
-    const a = buttonAt(e.clientX);
+    const a = buttonAt(e.clientX, e.clientY, e.pointerType);
     if (a !== fingers.get(e.pointerId)) {
       fingers.set(e.pointerId, a);
       syncTouch();
@@ -725,6 +744,7 @@
   };
   touchEl.addEventListener('pointerup', liftFinger);
   touchEl.addEventListener('pointercancel', liftFinger);
+  window.addEventListener('pointerup', liftFinger);      // mouse released outside the window
   // Long-press shouldn't open a context menu or select anything
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -1964,13 +1984,14 @@
     }
   }
 
-  // Two big screens in the stands (left out on phones, where the top of the
-  // screen already holds the scoreboard and corner buttons)
+  // Two big screens in the stands (left out on touch screens, where the top of
+  // the screen already holds the scoreboard and corner buttons)
   function drawScreens(t) {
-    if (view.band) return;
-    const top = Math.max(vis.t + 14, STAND_TOP + 6);
-    const w = 190, h = 94;
-    for (const cx of [WORLD_W / 2 - 380, WORLD_W / 2 + 380]) {
+    if (isTouch) return;
+    // Hung below the corner buttons so nothing overlaps them
+    const top = Math.max(vis.t + 100, STAND_TOP + 6);
+    const w = 180, h = 90;
+    for (const cx of [WORLD_W / 2 - 400, WORLD_W / 2 + 400]) {
       const x = cx - w / 2;
       ctx.fillStyle = '#0c1522';
       ctx.fillRect(cx - 30, top + h, 8, 40);

@@ -16,7 +16,7 @@ On iPhone, Safari can't make websites full screen: tap **Share → Add to Home S
 
 ## How to play
 
-**On a computer**
+**On a computer**, click and hold the on-screen buttons at the bottom, or use the keyboard:
 
 - **A / D** or **← / →**: move
 - **W** or **↑**: jump
