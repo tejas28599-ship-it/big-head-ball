@@ -482,7 +482,7 @@
   // Crossbars as solid rectangles the ball collides with
   const crossbars = goals.map(g => ({ x: g.x, y: g.y - BAR_H, w: g.w, h: BAR_H }));
 
-  const CROSSBAR_TILT = 900;      // sideways accel on a ball sitting on a crossbar
+  const CROSSBAR_TILT = 2600;     // sideways accel on a ball on a crossbar: it rolls off clear of the keeper
   const BALL_MAX_SPEED = 2000;    // keeps the ball from tunnelling through things
 
   // ---------- Player constants ----------
@@ -505,6 +505,8 @@
   const HEAD_BOUNCE = 0.62;       // restitution vs the head
   const BODY_BOUNCE = 0.32;       // restitution vs the body
   const HEAD_MIN_POP = 200;       // headers always pop the ball away a bit
+  const BODY_MAX_REBOUND = 700;   // fastest a ball can leave a body bump
+  const HEAD_MAX_REBOUND = 1050;  // fastest a ball can leave a header
 
   const KICK_DUR = 0.26;          // total swing time
   const KICK_OUT = 0.07;          // time to reach full extension
@@ -516,6 +518,12 @@
     air:    { swing: 2.5, power: 760,  lift: 1000 },  // leg swings up under the ball
   };
   const GROUND_SHOT_TIME = 1.5;   // seconds a ground shot keeps the ball from bouncing
+  const KICK_QUEUE_TIME = 0.3;    // how long an early kick press is remembered
+  const AIR_KICK_REACH = 60;
+  const WEDGE_GAP = 2 * BODY_R + 2 * 22 + 14;   // players this close can't fit the ball between them
+  const CHIP_RANGE = 135;         // opponent closer than this in front: air kick becomes a chip
+  const CHIP_POWER = 420;
+  const CHIP_LIFT = 1180;      // in the air the whole leg sweeps: reach around the hip
 
   // Players stay on the pitch between the goal mouths
   const P_MIN_X = GOAL_W + HEAD_R;
@@ -529,10 +537,14 @@
   // AI tuning per difficulty
   const DIFFICULTY = {
     // idleRate: chance per second of zoning out briefly
-    easy:   { speedMul: 0.65, reaction: 0.28, lookahead: 0,   aimError: 60, jumpChance: 0.35, kickChance: 0.4,  idleRate: 0.45 },
-    normal: { speedMul: 0.85, reaction: 0.16, lookahead: 0.2, aimError: 30, jumpChance: 0.65, kickChance: 0.7,  idleRate: 0.15 },
-    hard:   { speedMul: 1.0,  reaction: 0.07, lookahead: 0.4, aimError: 10, jumpChance: 0.9,  kickChance: 0.95, idleRate: 0.03 },
+    // patience: seconds it jockeys an opponent on the ball before tackling
+    easy:   { speedMul: 0.65, reaction: 0.28, lookahead: 0,   aimError: 60, jumpChance: 0.35, kickChance: 0.4,  idleRate: 0.45, patience: 1.4 },
+    normal: { speedMul: 0.85, reaction: 0.16, lookahead: 0.2, aimError: 30, jumpChance: 0.65, kickChance: 0.7,  idleRate: 0.15, patience: 1.0 },
+    hard:   { speedMul: 1.0,  reaction: 0.07, lookahead: 0.4, aimError: 10, jumpChance: 0.9,  kickChance: 0.95, idleRate: 0.03, patience: 0.6 },
   };
+
+  const JOCKEY_GAP = 150;         // CPU's stand-off distance from an opponent's ball
+  const TACKLE_TIME = 0.6;        // how long a CPU tackle lasts
 
   const DEBUG = new URLSearchParams(location.search).has('debug');
 
@@ -565,17 +577,19 @@
       kickT: -1,                  // time into the current kick, -1 = not kicking
       kickHit: false,             // already struck the ball during this kick
       kickType: 'ground',         // 'ground' | 'air'
+      kickQueued: null,           // a kick pressed mid-swing, waiting to start
+      kickQueueT: 0,
       lastHeaderSfx: -1,
       jumpBuffer: 0,
       colors,
       input: newInput(),
-      ai: isAI ? { timer: 0, idle: 0, err: 0, errT: 0, pushT: 0, yieldT: 0 } : null,
+      ai: isAI ? { timer: 0, idle: 0, err: 0, errT: 0, pushT: 0, yieldT: 0, tackleT: 0, faceT: 0, backT: 0 } : null,
       touchBall: false,           // touched the ball this physics step
     };
   }
 
-  const human = makePlayer(320, 1, { skin: '#f2c38f', shirt: '#e53935', shorts: '#1e3a8a', hair: '#3b2314' }, false);
-  const cpu = makePlayer(960, -1, { skin: '#c68642', shirt: '#1e88e5', shorts: '#f5f5f5', hair: '#e8b53a' }, true);
+  const human = makePlayer(320, 1, { skin: '#f2c38f', shirt: '#e53935', shorts: '#1e3a8a', hair: '#3b2314', boot: '#e53935', stripe: '#ffffff', number: '10' }, false);
+  const cpu = makePlayer(960, -1, { skin: '#c68642', shirt: '#1e88e5', shorts: '#f5f5f5', hair: '#e8b53a', boot: '#ffd23f', stripe: '#1e3a8a', number: '7' }, true);
   const players = [human, cpu];
 
   const headPos = (p) => ({ x: p.x, y: p.y - HEAD_OFFSET });
@@ -986,6 +1000,18 @@
     const homeX = P_MAX_X - 60;
     let targetX;
 
+    // Is the opponent dribbling? (ball low, just in front of them, away from my goal)
+    const theyHaveBall = !ballHigh && human.onGround && ball.x > human.x - 10 && ball.x - human.x < 110 &&
+      Math.abs(ball.vx) < 500 && ball.x < WORLD_W - 300;
+    // Alternate between jockeying and a tackle, so I'm not glued to them
+    if (theyHaveBall) {
+      ai.tackleT -= d.reaction;
+      if (ai.tackleT < -TACKLE_TIME) ai.tackleT = d.patience * (0.7 + Math.random() * 0.6);
+    } else {
+      ai.tackleT = d.patience * (0.4 + Math.random() * 0.4);
+    }
+    const jockey = theyHaveBall && ai.tackleT > 0;
+
     const behind = ball.x > p.x - 10;
     if (behind) {
       // Ball is level with / behind me: get back goal-side of it
@@ -996,11 +1022,33 @@
     } else if (ball.vx > 300) {
       // Ball heading toward my goal: drop back between ball and goal
       targetX = Math.min(homeX, Math.max(p.x, bx + 140));
+    } else if (jockey) {
+      // They have the ball at their feet: hold a stand-off distance in front
+      // of them and back up as they come forward, instead of pressing into them
+      targetX = ball.x + JOCKEY_GAP;
     } else {
       // Attack: approach from the right so contact pushes the ball left.
       // For a high ball, aim the head slightly right of it to head it left.
       // Aim error only ever moves a header target further right (the safe side).
       targetX = ballHigh ? bx - ai.err + 26 + Math.abs(ai.err) * 0.6 : bx + BODY_R + ball.r - 6;
+    }
+
+    // Deadlock breaker: if we've been bunched up with the ball between us for
+    // over a second, chip it over them or step back to make space.
+    const bunched = Math.abs(human.x - p.x) < 230 &&
+      ball.x > Math.min(human.x, p.x) - 30 && ball.x < Math.max(human.x, p.x) + 30 && !ballHigh;
+    ai.faceT = bunched ? ai.faceT + d.reaction : 0;
+    const ballInFront = ball.x < p.x - 25;           // never back up into the ball
+    if (ai.backT > 0 && ballInFront) {
+      ai.backT -= d.reaction;
+      targetX = p.x + 170;
+    } else if (ai.faceT > 1.1 && ballInFront) {
+      ai.faceT = 0;
+      const atFeet = p.x - ball.x > 0 && p.x - ball.x < 90 && ball.y > p.y - 95;
+      if (atFeet && p.kickT < 0 && Math.random() < 0.6) inp.lobPressed = true;
+      else ai.backT = 0.45;
+    } else if (!ballInFront) {
+      ai.backT = 0;
     }
     targetX = Math.max(P_MIN_X, Math.min(P_MAX_X, targetX));
 
@@ -1045,7 +1093,10 @@
         Math.random() < d.kickChance) {
       // An air kick carries ~840 units, so it only makes sense from far out
       const lobLands = ball.x > 700;
-      const lobChance = blocked ? (lobLands ? 0.75 : 0.2) : (lobLands ? 0.3 : 0.05);
+      // Opponent right in front: always chip over them (a ground shot would
+      // just ping-pong off their body)
+      const pointBlank = opp.onGround && ball.x - opp.x > 0 && p.x - opp.x < CHIP_RANGE;
+      const lobChance = pointBlank ? 1 : blocked ? (lobLands ? 0.75 : 0.2) : (lobLands ? 0.3 : 0.05);
       if (Math.random() < lobChance) inp.lobPressed = true;
       else inp.kickPressed = true;
     }
@@ -1386,14 +1437,23 @@
 
     clampToPitch(p);
 
-    // Kick (ground shot or air kick)
-    if ((inp.kickPressed || inp.lobPressed) && p.kickT < 0) {
-      p.kickT = 0;
-      p.kickHit = false;
-      p.kickType = inp.lobPressed ? 'air' : 'ground';
+    // Kick (ground shot or air kick). A press is remembered for a moment, so
+    // a kick pressed during the follow-through of the last one still happens
+    // (it restarts the swing) instead of being dropped.
+    if (inp.kickPressed || inp.lobPressed) {
+      p.kickQueued = inp.lobPressed ? 'air' : 'ground';
+      p.kickQueueT = KICK_QUEUE_TIME;
     }
     p.input.kickPressed = false;
     p.input.lobPressed = false;
+    if (p.kickQueued && (p.kickT < 0 || p.kickT > KICK_HOLD)) {
+      p.kickT = 0;
+      p.kickHit = false;
+      p.kickType = p.kickQueued;
+      p.kickQueued = null;
+    } else if (p.kickQueued && (p.kickQueueT -= dt) <= 0) {
+      p.kickQueued = null;
+    }
     if (p.kickT >= 0) {
       p.kickT += dt;
       if (p.kickT >= KICK_DUR) p.kickT = -1;
@@ -1487,22 +1547,33 @@
       const dvn = out - vn;
       ball.vx += dvn * nx;
       ball.vy += dvn * ny;
+      // A body bump or a header can't fling the ball like a kick (e.g. a
+      // player landing on it from a jump)
+      const cap = isBody ? BODY_MAX_REBOUND : HEAD_MAX_REBOUND;
+      const sp = Math.hypot(ball.vx, ball.vy);
+      if (sp > cap) { ball.vx *= cap / sp; ball.vy *= cap / sp; }
     }
   }
 
   function collideBallPlayer(p) {
-    const b = bodyPos(p);
-    const h = headPos(p);
-    collideBallCircle(p, b.x, b.y, BODY_R, BODY_BOUNCE, 0, true);
-    collideBallCircle(p, h.x, h.y, HEAD_R, HEAD_BOUNCE, HEAD_MIN_POP, false);
-
-    // Kick: the swinging foot launches the ball once per kick
+    // The kick is checked first, so a swing that reaches the ball launches it
+    // rather than the body bouncing it away a moment earlier.
     if (p.kickT >= 0 && !p.kickHit && kickAmount(p.kickT) > 0.25) {
       const f = kickFoot(p.x, p.y, p.facing, p.kickT, p.kickType);
-      const dx = ball.x - f.x;
-      const dy = ball.y - f.y;
-      const reach = FOOT_R + ball.r + 4;
-      if (dx * dx + dy * dy < reach * reach) {
+      let dx = ball.x - f.x;
+      let dy = ball.y - f.y;
+      let reach = FOOT_R + ball.r + 4;
+      let hit = dx * dx + dy * dy < reach * reach;
+      const airborne = !p.onGround;
+      if (!hit && airborne) {
+        // Jump-kick: the leg sweeps up through hip and chest height in front
+        const zx = p.x + p.facing * 30, zy = p.y - 62;
+        const ddx = ball.x - zx, ddy = ball.y - zy;
+        if (ddx * ddx + ddy * ddy < AIR_KICK_REACH * AIR_KICK_REACH && (ball.x - p.x) * p.facing > -6) {
+          hit = true; dx = ddx; dy = ddy; reach = AIR_KICK_REACH;
+        }
+      }
+      if (hit) {
         p.kickHit = true;
         const k = KICK[p.kickType];
         sfx.kick(p.kickType);
@@ -1511,18 +1582,34 @@
           ball.vx = p.facing * k.power + p.vx * 0.4;
           ball.vy = ball.y + ball.r < GROUND_Y - 4 ? 300 : 0;
           ball.groundShot = GROUND_SHOT_TIME;
+        } else if (airborne) {
+          // Air kick from a jump: a driven volley, forward and a little up
+          ball.vx = p.facing * (k.power + 260) + p.vx * 0.3;
+          ball.vy = -560 + Math.min(0, p.vy * 0.2);
+          ball.groundShot = 0;
         } else {
-          // Lofted: a high arc toward the other side
-          ball.vx = p.facing * k.power + p.vx * 0.3;
-          ball.vy = -k.lift + Math.min(0, p.vy * 0.25);
+          // Lofted: a high arc toward the other side. With an opponent right
+          // in front it becomes a steep chip that drops over their head.
+          const opp = p === human ? cpu : human;
+          const gap = (opp.x - p.x) * p.facing;
+          const chip = gap > 0 && gap < CHIP_RANGE;
+          ball.vx = p.facing * (chip ? CHIP_POWER : k.power) + p.vx * 0.3;
+          ball.vy = -(chip ? CHIP_LIFT : k.lift) + Math.min(0, p.vy * 0.25);
           ball.groundShot = 0;
         }
         // Make sure the ball starts clear of the foot
         const d = Math.hypot(dx, dy) || 1;
         const pen = reach - d;
         if (pen > 0) { ball.x += (dx / d) * pen; ball.y += (dy / d) * pen; }
+        p.touchBall = true;
+        return;
       }
     }
+
+    const b = bodyPos(p);
+    const h = headPos(p);
+    collideBallCircle(p, b.x, b.y, BODY_R, BODY_BOUNCE, 0, true);
+    collideBallCircle(p, h.x, h.y, HEAD_R, HEAD_BOUNCE, HEAD_MIN_POP, false);
   }
 
   function step(dt) {
@@ -1553,11 +1640,20 @@
 
     for (const p of players) p.touchBall = false;
     for (const p of players) collideBallPlayer(p);
-    // Ball pinched between both players: pop it up instead of a stalemate
-    if (human.touchBall && cpu.touchBall) ball.squeezeT += dt; else ball.squeezeT = 0;
-    if (ball.squeezeT > 0.1) {
-      ball.vy = -760;
-      ball.vx = (Math.random() - 0.5) * 240;
+    // Ball pinched between both players: pop it up and over one of them
+    // (either side, at random) so it lands clear instead of dropping straight
+    // back between them
+    // (also when they stand head to head with the ball wedged low between
+    // them, even if kicks keep knocking it back and forth)
+    const lo = Math.min(human.x, cpu.x), hi = Math.max(human.x, cpu.x);
+    const wedged = hi - lo < WEDGE_GAP && ball.x > lo && ball.x < hi && ball.y > GROUND_Y - 95;
+    if ((human.touchBall && cpu.touchBall) || wedged) ball.squeezeT += dt; else ball.squeezeT = 0;
+    if (ball.squeezeT > 0.15) {
+      ball.vy = -840;
+      // near a goal it pops toward midfield (cleared), elsewhere either way
+      const nearGoal = ball.x < 400 || ball.x > WORLD_W - 400;
+      const side = nearGoal ? (ball.x < WORLD_W / 2 ? 1 : -1) : (Math.random() < 0.5 ? -1 : 1);
+      ball.vx = side * (360 + Math.random() * 80);
       ball.y -= 6;
       ball.squeezeT = 0;
     }
@@ -1716,7 +1812,8 @@
       p.onGround = true;
       p.kickT = -1;
       p.jumpBuffer = 0;
-      if (p.ai) Object.assign(p.ai, { timer: 0.3, idle: 0, err: 0, errT: 0, pushT: 0, yieldT: 0 });
+      if (p.ai) Object.assign(p.ai, { timer: 0.3, idle: 0, err: 0, errT: 0, pushT: 0, yieldT: 0, tackleT: 0, faceT: 0, backT: 0 });
+      p.kickQueued = null;
     }
     ball.x = ball.px = WORLD_W / 2;
     ball.y = ball.py = KICKOFF_BALL_Y;
@@ -2495,128 +2592,213 @@
     ctx.closePath();
   }
 
-  function drawShoe(x, y, angle, facing) {
+  // Mix a hex colour toward white (amt > 0) or black (amt < 0)
+  function tint(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = (c) => Math.round(amt > 0 ? c + (255 - c) * amt : c * (1 + amt));
+    return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+  }
+  const INK = '#2a1606';            // outline colour for the characters
+
+  // A big chunky football boot. Origin = ankle; +x = toward the toe.
+  function drawBoot(x, y, angle, facing, colors) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle - Math.PI / 2);
-    ctx.fillStyle = '#1b1b1b';
+    ctx.scale(facing, 1);
+    ctx.lineJoin = 'round';
+    // studs
+    ctx.fillStyle = '#e8e8e8';
+    for (const sx of [-9, 3, 15]) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(sx - 2.5, 9, 5, 4, 1.5) : ctx.rect(sx - 2.5, 9, 5, 4); ctx.fill(); }
+    // sole
+    ctx.fillStyle = '#1d1d1d';
     ctx.beginPath();
-    ctx.ellipse(facing * 4, 0, FOOT_R, FOOT_R * 0.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(facing * 4 - 6, FOOT_R * 0.6 - 3, 12, 2);
+    ctx.moveTo(-15, 5); ctx.lineTo(25, 5);
+    ctx.quadraticCurveTo(30, 6, 28, 10); ctx.lineTo(-14, 10);
+    ctx.quadraticCurveTo(-17, 8, -15, 5);
+    ctx.closePath(); ctx.fill();
+    // upper
+    const g = ctx.createLinearGradient(0, -14, 0, 6);
+    g.addColorStop(0, tint(colors.boot, 0.25));
+    g.addColorStop(1, tint(colors.boot, -0.2));
+    ctx.fillStyle = g;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(-13, -13);                       // collar, back
+    ctx.lineTo(4, -13);                         // collar, front
+    ctx.quadraticCurveTo(10, -9, 18, -6);       // laces slope down to the toe
+    ctx.quadraticCurveTo(29, -3, 28, 4);        // rounded toe
+    ctx.lineTo(-15, 6);                         // along the sole
+    ctx.quadraticCurveTo(-18, -4, -13, -13);    // heel
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // stripes
+    ctx.strokeStyle = colors.stripe;
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const sx of [-6, -1, 4]) { ctx.moveTo(sx, -10); ctx.lineTo(sx + 5, 3); }
+    ctx.stroke();
+    // laces
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(7, -11); ctx.lineTo(11, -8.5);
+    ctx.moveTo(11, -9.5); ctx.lineTo(15, -7);
+    ctx.stroke();
+    // shine
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.ellipse(18, -2, 5, 2, -0.3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+  }
+
+  function drawLeg(hx, hy, fx, fy, colors) {
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 12;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.strokeStyle = colors.skin;
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(fx, fy); ctx.stroke();
+    // sock: the lower half in the shirt colour with a white band
+    const mx = hx + (fx - hx) * 0.45, my = hy + (fy - hy) * 0.45;
+    ctx.strokeStyle = colors.shirt;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(fx, fy); ctx.stroke();
+    const bx = hx + (fx - hx) * 0.5, by = hy + (fy - hy) * 0.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + (fx - hx) * 0.1, by + (fy - hy) * 0.1); ctx.stroke();
   }
 
   function drawPlayer(p, x, y, ballX, ballY) {
     const f = p.facing;
-    const { skin, shirt, shorts, hair } = p.colors;
+    const c = p.colors;
+    const { skin, shirt, shorts, hair } = c;
 
     // Shadow
     const h = GROUND_Y - y;
     const s = Math.max(0.35, 1 - h / 400);
-    ctx.fillStyle = `rgba(0,0,0,${0.25 * s})`;
+    ctx.fillStyle = `rgba(0,0,0,${0.28 * s})`;
     ctx.beginPath();
-    ctx.ellipse(x, GROUND_Y + 3, 34 * s, 8 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + f * 4, GROUND_Y + 3, 44 * s, 9 * s, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Back leg (static)
-    const backHipX = x - f * 6, hipY = y - HIP_OFFSET;
-    const backFootX = x - f * 10, backFootY = y - FOOT_R * 0.6;
-    ctx.strokeStyle = skin;
-    ctx.lineWidth = 9;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(backHipX, hipY);
-    ctx.lineTo(backFootX, backFootY - 4);
-    ctx.stroke();
-    drawShoe(backFootX, backFootY, Math.PI / 2, f);
+    // Back leg + boot (static)
+    const hipY = y - HIP_OFFSET;
+    const backAnkleX = x - f * 17, backAnkleY = y - 11;
+    drawLeg(x - f * 8, hipY, backAnkleX, backAnkleY, c);
+    drawBoot(backAnkleX, backAnkleY, Math.PI / 2, f, c);
 
-    // Body
+    // Body: shirt with outline, collar and number, shorts below
+    const by = y - BODY_OFFSET;
     ctx.fillStyle = shirt;
-    ctx.beginPath();
-    ctx.arc(x, y - BODY_OFFSET, BODY_R, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, by, BODY_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = shorts;
     ctx.beginPath();
-    ctx.arc(x, y - BODY_OFFSET, BODY_R, 0.15 * Math.PI, 0.85 * Math.PI);
-    ctx.closePath();
-    ctx.fill();
+    ctx.arc(x, by, BODY_R - 1.5, 0.12 * Math.PI, 0.88 * Math.PI);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath(); ctx.ellipse(x - f * 8, by - 10, 8, 5, -0.4 * f, 0, Math.PI * 2); ctx.fill();
+    ctx.font = `15px ${GAME_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(c.number, x - f * 5, by - 2);
+    ctx.textBaseline = 'alphabetic';
 
-    // Kicking leg
+    // Kicking leg + boot
     const k = kickFoot(x, y, f, p.kickT, p.kickType);
-    const footX = k.hipX + Math.cos(k.angle) * (LEG_LEN - FOOT_R * 0.6);
-    const footY = k.hipY + Math.sin(k.angle) * (LEG_LEN - FOOT_R * 0.6);
-    ctx.strokeStyle = skin;
-    ctx.beginPath();
-    ctx.moveTo(k.hipX, k.hipY);
-    ctx.lineTo(footX, footY);
-    ctx.stroke();
-    drawShoe(footX, footY, k.angle, f);
+    const footX = k.hipX + Math.cos(k.angle) * (LEG_LEN - 8);
+    const footY = k.hipY + Math.sin(k.angle) * (LEG_LEN - 8);
+    drawLeg(k.hipX, k.hipY, footX, footY, c);
+    drawBoot(footX, footY, k.angle, f, c);
 
-    // Head
+    // Head: shaded skin with a bold outline
     const hx = x, hy = y - HEAD_OFFSET;
-    ctx.fillStyle = skin;
-    ctx.beginPath();
-    ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    const skinG = ctx.createRadialGradient(hx - f * 14, hy - 18, 6, hx, hy, HEAD_R + 4);
+    skinG.addColorStop(0, tint(skin, 0.28));
+    skinG.addColorStop(0.7, skin);
+    skinG.addColorStop(1, tint(skin, -0.12));
+    ctx.fillStyle = skinG;
+    ctx.beginPath(); ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2); ctx.fill();
 
-    // Hair: a cap over the top-back of the head, clipped to the head
+    // Hair: a cap over the top-back of the head, with a highlight
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2);
-    ctx.clip();
+    ctx.beginPath(); ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2); ctx.clip();
     ctx.fillStyle = hair;
     ctx.beginPath();
     ctx.ellipse(hx - f * 12, hy - 36, HEAD_R + 8, 30, f * -0.25, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.beginPath(); ctx.ellipse(hx - f * 18, hy - 40, 16, 6, f * -0.35, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.arc(hx, hy, HEAD_R, 0, Math.PI * 2); ctx.stroke();
 
     // Ear on the back side
     ctx.fillStyle = skin;
-    ctx.beginPath();
-    ctx.arc(hx - f * (HEAD_R - 4), hy + 4, 8, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(hx - f * (HEAD_R - 3), hy + 5, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = tint(skin, -0.2);
+    ctx.beginPath(); ctx.arc(hx - f * (HEAD_R - 3), hy + 5, 3.5, 0, Math.PI * 2); ctx.fill();
 
-    // Eyes that follow the ball
+    // Cheeks
+    ctx.fillStyle = 'rgba(255, 110, 110, 0.28)';
+    ctx.beginPath(); ctx.ellipse(hx + f * 24, hy + 12, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx - f * 6, hy + 14, 7, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Eyes that follow the ball, with a glint
     const eyes = [hx + f * 4 - 13, hx + f * 4 + 13];
-    const eyeY = hy - 2;
+    const eyeY = hy - 3;
     for (const ex of eyes) {
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ex, eyeY, 10, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(ex, eyeY, 10, 11, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       const dx = ballX - ex, dy = ballY - eyeY;
       const d = Math.hypot(dx, dy) || 1;
       const look = Math.min(4.5, d / 20);
+      const px = ex + (dx / d) * look, py = eyeY + (dy / d) * look;
       ctx.fillStyle = '#1b1b1b';
-      ctx.beginPath();
-      ctx.arc(ex + (dx / d) * look, eyeY + (dy / d) * look, 5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(px, py, 5.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(px - 1.8, py - 2, 1.7, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Eyebrows
-    ctx.strokeStyle = '#3b2314';
-    ctx.lineWidth = 3;
+    // Eyebrows: bold; the CPU's slope down into a determined frown
+    ctx.strokeStyle = tint(hair === '#e8b53a' ? '#8a5a12' : hair, -0.1);
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = 'round';
     for (const ex of eyes) {
+      const inner = (ex - hx) * f > 4;          // the eyebrow nearer the nose
+      const tilt = p.fixedFacing ? (inner ? 3 : -2) : (inner ? -1.5 : 0.5);
       ctx.beginPath();
-      ctx.moveTo(ex - 8, eyeY - 15);
-      ctx.lineTo(ex + 8, eyeY - 15 - f * 2);
+      ctx.moveTo(ex - 8, eyeY - 16 + (f > 0 ? -tilt : tilt));
+      ctx.lineTo(ex + 8, eyeY - 16 + (f > 0 ? tilt : -tilt));
       ctx.stroke();
     }
 
-    // Mouth
-    ctx.strokeStyle = '#8a3b2a';
-    ctx.lineWidth = 3;
+    // Nose
+    ctx.strokeStyle = tint(skin, -0.3);
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(hx + f * 8, hy + 20, 9, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.arc(hx + f * 22, hy + 8, 5, f > 0 ? -0.6 : Math.PI - 0.9, f > 0 ? 1.2 : Math.PI + 0.6);
+    ctx.stroke();
+
+    // Mouth: a grin, a little open
+    ctx.fillStyle = '#7a2a1e';
+    ctx.beginPath();
+    ctx.moveTo(hx + f * 1, hy + 21);
+    ctx.quadraticCurveTo(hx + f * 11, hy + 33, hx + f * 21, hy + 21);
+    ctx.quadraticCurveTo(hx + f * 11, hy + 25, hx + f * 1, hy + 21);
+    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
     ctx.stroke();
     ctx.lineCap = 'butt';
   }
