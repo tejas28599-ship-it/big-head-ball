@@ -14,6 +14,17 @@ You don't need to install anything. Big Head Ball runs in your browser on any de
 
 On iPhone, Safari can't make websites full screen: tap **Share → Add to Home Screen** and open the game from your home screen instead. Turn silent mode off to hear the sound effects.
 
+## Play offline
+
+Open the link once while you're online and the game saves itself on your device. After that it works with no internet at all, even in flight mode. You'll see **✓ Ready to play offline** on the start screen when it's ready.
+
+To get an app icon on your home screen:
+
+- **Android (Chrome):** tap **Install** on the start screen (or the browser menu → **Install app**).
+- **iPhone (Safari):** tap **Share → Add to Home Screen**.
+
+When you're online again, the game updates itself to the latest version automatically.
+
 ## How to play
 
 **On a computer**, click and hold the on-screen buttons at the bottom, or use the keyboard:
@@ -34,6 +45,6 @@ Your total wins are saved on your device and shown on the start screen.
 
 ## For developers
 
-The whole game is plain HTML, CSS and JavaScript in a single `index.html` file, with no frameworks, physics libraries, images or audio files. It uses a canvas with a fixed-timestep loop, custom physics, and sounds generated with the Web Audio API.
+The whole game is plain HTML, CSS and JavaScript in a single `index.html` file, with no frameworks, physics libraries, images or audio files. Offline play comes from `sw.js` (a service worker that caches the game and its font) and `manifest.webmanifest` with the icons in `icons/`, which make it installable. It uses a canvas with a fixed-timestep loop, custom physics, and sounds generated with the Web Audio API.
 
 Physics, player and AI settings are named constants at the top of the script in `index.html` (for example `KICK_POWER`, `P_JUMP_V` and the `DIFFICULTY` table). Add `?debug` to the URL to click anywhere and throw the ball there.

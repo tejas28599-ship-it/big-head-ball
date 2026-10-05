@@ -1,0 +1,15 @@
+{
+  "name": "Big Head Ball",
+  "short_name": "Big Head Ball",
+  "description": "A 1v1 big-head football game. Works offline once opened.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d2238",
+  "theme_color": "#0d2238",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

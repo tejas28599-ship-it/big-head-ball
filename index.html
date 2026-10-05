@@ -9,6 +9,9 @@
 <meta name="apple-mobile-web-app-title" content="Big Head Ball">
 <meta name="theme-color" content="#0d2238">
 <title>Big Head Ball</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
@@ -307,6 +310,11 @@
     opacity: 0.8;
   }
 
+  .offline-note {
+    font-size: max(12px, calc(var(--u) * 19));
+    color: #8af5b4;
+    text-shadow: 0 2px 0 #0d2238;
+  }
   .wins {
     font-size: max(14px, calc(var(--u) * 28));
     font-weight: 400;
@@ -370,8 +378,10 @@
     <div class="row">
       <button class="btn primary" id="playBtn">Play</button>
       <button class="btn" id="fsMenuBtn">Full screen</button>
+      <button class="btn hidden-btn" id="installBtn">Install</button>
     </div>
     <div class="wins" id="winsLabel">Total wins: 0</div>
+    <div class="offline-note hidden-btn" id="offlineNote">✓ Ready to play offline</div>
     <div class="keys-guide desk-only">
       <div class="kg-title">KEYBOARD CONTROLS</div>
       <div class="kg-row">
@@ -2869,6 +2879,32 @@
     render(acc / FIXED_DT);
     requestAnimationFrame(frame);
   }
+  // ---------- Offline + install ----------
+  // A service worker (sw.js) keeps a copy of the game so it plays without a
+  // connection after the first visit. Only works when served over http(s).
+  const offlineNote = document.getElementById('offlineNote');
+  const installBtn = document.getElementById('installBtn');
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* offline mode unavailable */ });
+    navigator.serviceWorker.ready.then(() => offlineNote.classList.remove('hidden-btn')).catch(() => {});
+  }
+  // Android/desktop Chrome: offer a one-tap install (iPhone uses Share -> Add to Home Screen)
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    if (!isStandalone) installBtn.classList.remove('hidden-btn');
+  });
+  installBtn.addEventListener('click', async () => {
+    installBtn.blur();
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    try { await installPrompt.userChoice; } catch (e) { /* dismissed */ }
+    installPrompt = null;
+    installBtn.classList.add('hidden-btn');
+  });
+  window.addEventListener('appinstalled', () => installBtn.classList.add('hidden-btn'));
+
   requestAnimationFrame(frame);
 })();
 </script>
