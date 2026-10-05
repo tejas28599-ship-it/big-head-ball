@@ -2,7 +2,7 @@
 // The game page is fetched network-first (so new versions arrive as soon as
 // you're online) and falls back to the cached copy offline. The Google font
 // is cached on install, so the lettering looks the same offline.
-const CACHE = 'bhb-v1';
+const CACHE = 'bhb-v2';
 const SHELL = [
   './',
   './index.html',
